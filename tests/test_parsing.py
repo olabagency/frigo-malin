@@ -97,3 +97,37 @@ def test_extract_json():
     assert extract_json('Voici : {"a": [1, 2]} bon appétit') == {"a": [1, 2]}
     with pytest.raises(ValueError):
         extract_json("pas de json")
+
+
+MESSY_LDJSON = (
+    '<html><head><title>Steak tartare : la recette facile</title>\n'
+    '<script type="application/ld+json">\n'
+    '{"@context":"http://schema.org","@type":"Recipe","name":"Steak tartare",\n'
+    ' "recipeIngredient":["500 g de boeuf haché","1 jaune d\'oeuf","2 c. à soupe de câpres",],\n'
+    ' "recipeInstructions":[{"@type":"HowToStep","text":"Hachez finement\n les oignons et les câpres."},\n'
+    '  {"@type":"HowToStep","text":"Mélangez avec la viande\tet le jaune d\'oeuf."}],\n'
+    ' "recipeYield":"4 personnes"}\n'
+    '</script></head><body></body></html>'
+)
+
+
+def test_extract_recipe_from_messy_ldjson():
+    """Retours à la ligne et tabulations bruts dans les textes, virgule en trop : on lit quand même."""
+    recipe = extract_recipe_from_html(MESSY_LDJSON, "https://www.marmiton.org/recettes/steak")
+    assert recipe is not None
+    assert recipe["title"] == "Steak tartare"
+    assert recipe["servings"] == 4
+    assert [i["name"] for i in recipe["ingredients"]] == ["boeuf haché", "jaune d'oeuf", "câpres"]
+    assert recipe["steps"] == ["Hachez finement les oignons et les câpres.", "Mélangez avec la viande et le jaune d'oeuf."]
+
+
+def test_html_to_text_keeps_the_recipe_part():
+    """Sur une page très longue, le texte envoyé à l'IA commence près des ingrédients."""
+    from custom_components.frigo_malin.parsing import html_to_text
+
+    junk = "<div>Menu publicité recettes du jour</div>" * 3000
+    page = f"<html><head><title>Tarte</title></head><body>{junk}<h2>Ingrédients</h2><ul><li>200 g de farine</li></ul></body></html>"
+    text = html_to_text(page)
+    assert text.startswith("Titre de la page : Tarte")
+    assert "200 g de farine" in text
+    assert len(text) < 41000

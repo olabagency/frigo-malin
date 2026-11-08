@@ -441,16 +441,35 @@ def _tags(node: dict[str, Any]) -> list[str]:
     return tags[:8]
 
 
+def _load_ldjson(block: str) -> Any:
+    """Lit un bloc JSON-LD, même un peu abîmé (retours à la ligne bruts, commentaires, virgules en trop)."""
+    text = block.strip()
+    text = re.sub(r"^\s*(?:<!--|<!\[CDATA\[)|(?:-->|\]\]>)\s*$", "", text).strip()
+    candidates = [text, html.unescape(text)]
+    # Virgules en trop avant } ou ], et plusieurs objets collés les uns aux autres.
+    fixed = re.sub(r",\s*([}\]])", r"\1", text)
+    candidates += [fixed, "[" + re.sub(r"}\s*{", "},{", fixed) + "]"]
+    for candidate in candidates:
+        try:
+            # strict=False accepte les retours à la ligne et tabulations dans les textes.
+            return json.loads(candidate, strict=False)
+        except ValueError:
+            continue
+    return None
+
+
+def count_ldjson(page: str) -> tuple[int, int]:
+    """Nombre de blocs JSON-LD dans la page, et nombre de blocs lisibles (pour le journal)."""
+    blocks = _LDJSON_RE.findall(page)
+    return len(blocks), sum(1 for b in blocks if _load_ldjson(b) is not None)
+
+
 def extract_recipe_from_html(page: str, url: str = "") -> dict[str, Any] | None:
     """Cherche une recette schema.org dans la page. Renvoie None si absente."""
     for block in _LDJSON_RE.findall(page):
-        try:
-            data = json.loads(block.strip())
-        except ValueError:
-            try:
-                data = json.loads(html.unescape(block.strip()))
-            except ValueError:
-                continue
+        data = _load_ldjson(block)
+        if data is None:
+            continue
         node = _find_recipe(data)
         if not node:
             continue
@@ -474,13 +493,26 @@ def extract_recipe_from_html(page: str, url: str = "") -> dict[str, Any] | None:
     return None
 
 
-def html_to_text(page: str, limit: int = 15000) -> str:
-    """Texte brut d'une page, pour l'analyse par l'IA en secours."""
-    page = re.sub(r"<(script|style|noscript|svg|header|footer|nav)[^>]*>.*?</\1>", " ", page, flags=re.I | re.S)
-    page = re.sub(r"<(br|/p|/li|/h\d|/div)[^>]*>", "\n", page, flags=re.I)
+def html_to_text(page: str, limit: int = 40000) -> str:
+    """Texte brut d'une page, pour l'analyse par l'IA en secours.
+
+    Les sites de recettes commencent souvent par des menus et des publicités :
+    on garde le titre, puis le passage qui commence un peu avant « ingrédients ».
+    """
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", page, re.I | re.S)
+    title = clean_text(title_match.group(1)) if title_match else ""
+    page = re.sub(r"<(script|style|noscript|svg|header|footer|nav|form|iframe)\b[^>]*>.*?</\1>", " ", page, flags=re.I | re.S)
+    page = re.sub(r"<!--.*?-->", " ", page, flags=re.S)
+    page = re.sub(r"<(br|/p|/li|/h\d|/div|/tr)\b[^>]*>", "\n", page, flags=re.I)
     text = html.unescape(_TAG_RE.sub(" ", page))
     lines = [" ".join(line.split()) for line in text.splitlines()]
-    return "\n".join(line for line in lines if line)[:limit]
+    text = "\n".join(line for line in lines if line)
+    start = 0
+    found = re.search(r"ingr[ée]dients?", text, re.I)
+    if found and len(text) > limit:
+        start = max(0, found.start() - 3000)
+    body = text[start : start + limit]
+    return f"Titre de la page : {title}\n\n{body}" if title else body
 
 
 # --------------------------------------------------------------------------

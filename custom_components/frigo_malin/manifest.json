@@ -1,15 +1,24 @@
 {
   "domain": "frigo_malin",
   "name": "Frigo Malin",
-  "after_dependencies": ["todo"],
-  "codeowners": ["@olabagency"],
+  "after_dependencies": [
+    "todo"
+  ],
+  "codeowners": [
+    "@olabagency"
+  ],
   "config_flow": true,
-  "dependencies": ["frontend", "http", "panel_custom", "websocket_api"],
+  "dependencies": [
+    "frontend",
+    "http",
+    "panel_custom",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/olabagency/frigo-malin",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/olabagency/frigo-malin/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "1.0.0"
+  "version": "1.0.1"
 }

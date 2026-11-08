@@ -7,6 +7,15 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.0.1] – 2026-11-08
+
+### Corrigé
+
+- Import depuis une adresse (Marmiton notamment) : les fiches recettes légèrement mal formées sont maintenant lues.
+- Quand la fiche est absente, l'IA reçoit la partie de la page qui contient la recette, et non plus le début de la page (menus, publicités).
+- Installation par HACS : elle ne dépend plus d'une archive de release.
+- Message plus clair quand un site bloque l'import, et détails dans le journal de Home Assistant.
+
 ## [1.0.0] – 2026-11-08
 
 Première version.

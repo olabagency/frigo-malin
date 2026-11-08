@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 from .ai import AIClient, AIError
-from .parsing import extract_recipe_from_html, html_to_text
+from .parsing import count_ldjson, extract_recipe_from_html, html_to_text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,10 +52,26 @@ async def async_import_recipe(session: aiohttp.ClientSession, ai: AIClient, url:
         recipe["origin"] = "url"
         return recipe
 
-    _LOGGER.debug("Pas de recette structurée sur %s, analyse par l'IA", final_url)
+    blocks, readable = count_ldjson(page)
+    text = html_to_text(page)
+    _LOGGER.warning(
+        "Import de %s : pas de recette structurée (page de %s caractères, %s bloc(s) JSON-LD dont %s lisible(s)). "
+        "Analyse du texte par l'IA (%s caractères).",
+        final_url,
+        len(page),
+        blocks,
+        readable,
+        len(text),
+    )
+    if len(text) < 200:
+        raise RecipeImportError(
+            "Le site n'a pas renvoyé la recette (page vide ou protection anti-robots). "
+            "Copiez les ingrédients et les étapes dans « Nouvelle recette »."
+        )
     try:
-        recipe = await ai.extract_recipe(html_to_text(page), final_url)
+        recipe = await ai.extract_recipe(text, final_url)
     except AIError as err:
+        _LOGGER.warning("Import de %s : l'IA n'a pas trouvé de recette. Début du texte : %s", final_url, text[:300])
         raise RecipeImportError(str(err)) from err
     recipe["origin"] = "url"
     return recipe
