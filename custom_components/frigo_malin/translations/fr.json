@@ -1,0 +1,63 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Frigo Malin",
+        "description": "Choisissez l'IA qui reconnaîtra vos aliments et proposera des recettes. Il vous faudra votre propre clé API.",
+        "data": {
+          "provider": "Fournisseur d'IA"
+        }
+      },
+      "credentials": {
+        "title": "Clé API",
+        "description": "Collez votre clé API {provider}. Elle reste sur votre Home Assistant.",
+        "data": {
+          "api_key": "Clé API",
+          "model": "Modèle"
+        },
+        "data_description": {
+          "model": "Gardez la valeur proposée sauf si vous savez quel modèle vous voulez."
+        }
+      },
+      "reconfigure": {
+        "title": "Changer d'IA",
+        "description": "Changez de fournisseur, de clé API ou de modèle.",
+        "data": {
+          "provider": "Fournisseur d'IA",
+          "api_key": "Clé API",
+          "model": "Modèle (vide = par défaut)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "La clé API a été refusée.",
+      "cannot_connect": "Impossible de joindre le fournisseur d'IA."
+    },
+    "abort": {
+      "single_instance_allowed": "Frigo Malin est déjà configuré.",
+      "reconfigure_successful": "Réglages mis à jour."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Réglages de Frigo Malin",
+        "data": {
+          "model": "Modèle d'IA",
+          "shopping_list_entity": "Liste de courses",
+          "auto_shopping": "Ajouter les ingrédients automatiquement quand je planifie un repas",
+          "excluded_ingredients": "Ne jamais ajouter ces ingrédients (séparés par des virgules)",
+          "default_servings": "Nombre de portions par défaut"
+        }
+      }
+    }
+  },
+  "selector": {
+    "provider": {
+      "options": {
+        "anthropic": "Claude (Anthropic)",
+        "openai": "OpenAI"
+      }
+    }
+  }
+}

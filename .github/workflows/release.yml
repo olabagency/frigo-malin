@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mettre la version du tag dans le manifest
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python3 - "$VERSION" <<'PY'
+          import json, sys
+          path = "custom_components/frigo_malin/manifest.json"
+          data = json.load(open(path))
+          data["version"] = sys.argv[1]
+          json.dump(data, open(path, "w"), indent=2)
+          PY
+      - name: Créer l'archive
+        run: cd custom_components/frigo_malin && zip -r ../../frigo_malin.zip .
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: frigo_malin.zip

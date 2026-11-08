@@ -1,0 +1,63 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Frigo Malin",
+        "description": "Choose the AI that will recognise your food and suggest recipes. You will need your own API key.",
+        "data": {
+          "provider": "AI provider"
+        }
+      },
+      "credentials": {
+        "title": "API key",
+        "description": "Paste your {provider} API key. It stays on your Home Assistant.",
+        "data": {
+          "api_key": "API key",
+          "model": "Model"
+        },
+        "data_description": {
+          "model": "Leave the default value unless you know which model you want."
+        }
+      },
+      "reconfigure": {
+        "title": "Change AI provider",
+        "description": "Change the provider, the API key or the model.",
+        "data": {
+          "provider": "AI provider",
+          "api_key": "API key",
+          "model": "Model (empty = default)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "The API key was rejected.",
+      "cannot_connect": "Could not reach the AI provider."
+    },
+    "abort": {
+      "single_instance_allowed": "Frigo Malin is already set up.",
+      "reconfigure_successful": "Settings updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Frigo Malin settings",
+        "data": {
+          "model": "AI model",
+          "shopping_list_entity": "Shopping list",
+          "auto_shopping": "Add ingredients automatically when planning a meal",
+          "excluded_ingredients": "Never add these ingredients (comma separated)",
+          "default_servings": "Default number of servings"
+        }
+      }
+    }
+  },
+  "selector": {
+    "provider": {
+      "options": {
+        "anthropic": "Claude (Anthropic)",
+        "openai": "OpenAI"
+      }
+    }
+  }
+}
