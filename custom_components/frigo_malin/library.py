@@ -13,6 +13,9 @@ from typing import Any
 from .parsing import normalize_ingredient
 
 LIBRARY_FILE = Path(__file__).parent / "library" / "recettes.json"
+# Photos des recettes, servies par Home Assistant avec le reste du panneau.
+IMAGES_DIR = Path(__file__).parent / "frontend" / "library"
+IMAGES_URL = "/frigo_malin_static/library"
 
 THEMES = {
     "anti_inflammatory": "Anti-inflammatoire",
@@ -35,7 +38,7 @@ TYPES = {
 }
 
 
-def prepare_recipe(raw: dict[str, Any]) -> dict[str, Any]:
+def prepare_recipe(raw: dict[str, Any], images: set[str] | None = None) -> dict[str, Any]:
     """Met une recette de la bibliothèque au format du carnet, avec ses thèmes déduits."""
     themes = list(dict.fromkeys(raw.get("themes") or []))
     allergens = list(raw.get("allergens") or [])
@@ -64,10 +67,12 @@ def prepare_recipe(raw: dict[str, Any]) -> dict[str, Any]:
         "benefits": list(raw.get("benefits") or []),
         "months": list(raw.get("months") or range(1, 13)),
         "origin": "library",
+        "image": f"{IMAGES_URL}/{raw['slug']}.webp" if images and raw["slug"] in images else "",
     }
 
 
 def load_library(path: Path = LIBRARY_FILE) -> list[dict[str, Any]]:
     """Lit le fichier (à appeler hors de la boucle d'évènements : lecture disque)."""
     data = json.loads(path.read_text(encoding="utf-8"))
-    return [prepare_recipe(r) for r in data.get("recipes", [])]
+    images = {p.stem for p in IMAGES_DIR.glob("*.webp")} if IMAGES_DIR.is_dir() else set()
+    return [prepare_recipe(r, images) for r in data.get("recipes", [])]

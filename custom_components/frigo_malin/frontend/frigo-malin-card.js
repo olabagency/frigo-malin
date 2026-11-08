@@ -86,7 +86,7 @@ class FrigoMalinCard extends HTMLElement {
     } else {
       const time = (a.prep_time || 0) + (a.cook_time || 0);
       const label = title || `${a.label || "Ce soir"} on mange…`;
-      const image = a.image && /^https?:\/\//.test(a.image) ? a.image : "";
+      const image = a.image && /^(https?:\/\/|\/frigo_malin_static\/)/.test(a.image) ? a.image : "";
       body = `
         <div class="hero" ${image ? `style="background-image:url('${fmcEsc(image)}')"` : ""}>
           ${image ? "" : `<span class="emoji">${fmcEmoji(st.state)}</span>`}

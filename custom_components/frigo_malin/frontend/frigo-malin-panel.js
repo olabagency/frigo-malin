@@ -15,7 +15,9 @@ const ABBREV_UNITS = new Set(["kg", "g", "mg", "cm", "l", "dl", "cl", "ml", "c. 
 const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-const safeUrl = (url) => (/^(https?:\/\/|data:image\/)/i.test(String(url || "").trim()) ? String(url).trim() : "");
+// Adresses d'images acceptées : web, données intégrées, ou photos fournies avec Frigo Malin.
+const safeUrl = (url) =>
+  /^(https?:\/\/|data:image\/|\/frigo_malin_static\/)/i.test(String(url || "").trim()) ? String(url).trim() : "";
 
 const isoDate = (d) => {
   const pad = (n) => String(n).padStart(2, "0");
@@ -2585,7 +2587,7 @@ class FrigoMalinPanel extends HTMLElement {
     const seasonal = r.months && r.months.length < 12 && r.months.includes(month);
     const themes = (r.themes || []).filter((t) => t !== "gluten_free" && t !== "quick").slice(0, 2);
     return `<button class="lib-card" data-action="${action}" ${extra}>
-      <div class="thumb" style="background:hsl(${hashHue(r.title)} 60% 50% / .15)">${r.emoji || emojiFor(r.title)}</div>
+      ${safeUrl(r.image) ? `<img class="thumb" src="${esc(safeUrl(r.image))}" alt="" loading="lazy">` : `<div class="thumb" style="background:hsl(${hashHue(r.title)} 60% 50% / .15)">${r.emoji || emojiFor(r.title)}</div>`}
       <div class="grow">
         <div class="t">${esc(r.title)}</div>
         <div class="m">${[time ? fmtMinutes(time) : "", r.servings ? `${r.servings} pers.` : ""].filter(Boolean).join(" · ")}</div>

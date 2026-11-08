@@ -52,7 +52,7 @@ def next_meal(store: FrigoStore, now: datetime) -> dict[str, Any] | None:
             "entry": entry,
             "recipe": recipe,
             "label": _slot_label(day, entry["slot"], now),
-            "image": image if image.startswith(("http://", "https://")) else None,
+            "image": image if image.startswith(("http://", "https://", "/frigo_malin_static/")) else None,
         }
     return None
 
