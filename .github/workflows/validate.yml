@@ -29,6 +29,10 @@ jobs:
           python-version: "3.13"
       - run: python3 scripts/check_version.py
       - run: pip install -r requirements_test.txt
+      - name: Installer l'interface web de HA (même version que HA)
+        run: |
+          REQ=$(python -c "import json, os, homeassistant.components.frontend as f; print(json.load(open(os.path.join(os.path.dirname(f.__file__), 'manifest.json')))['requirements'][0])")
+          pip install "$REQ"
       - run: pytest -q
       - uses: actions/setup-node@v4
         with:

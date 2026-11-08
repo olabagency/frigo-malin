@@ -7,23 +7,10 @@ on:
   release:
     types: [published]
 
-permissions:
-  contents: write
-
 jobs:
-  zip:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Vérifier que le tag correspond à la version du code
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          python3 scripts/check_version.py "$TAG"
-
-      - name: Créer l'archive pour HACS
-        run: cd custom_components/frigo_malin && zip -r ../../frigo_malin.zip . -x "__pycache__/*"
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: frigo_malin.zip
+        run: python3 scripts/check_version.py "${GITHUB_REF_NAME#v}"

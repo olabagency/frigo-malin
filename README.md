@@ -103,7 +103,7 @@ pytest
 
    (`patch` pour un correctif, `minor` pour une nouveauté, `major` pour un changement important, ou un numéro précis comme `1.4.0`.)
 2. Complétez la section créée dans `CHANGELOG.md`, committez et poussez sur `main`.
-3. Sur GitHub, publiez une **release** nommée `v1.1.0` (même numéro). Le workflow vérifie que les numéros correspondent et joint l'archive `frigo_malin.zip` que HACS installe.
+3. Sur GitHub, publiez une **release** nommée `v1.1.0` (même numéro). HACS la propose alors en mise à jour ; un workflow vérifie que le numéro du tag correspond au code.
 
 Si le format des données enregistrées change, augmentez `STORAGE_MINOR_VERSION` (ajout compatible) ou `STORAGE_VERSION` (changement de structure) dans `const.py` et écrivez la conversion dans `store.py`. Pour les réglages de l'intégration, c'est `MINOR_VERSION` / `VERSION` dans `config_flow.py` et `async_migrate_entry` dans `__init__.py`.
 

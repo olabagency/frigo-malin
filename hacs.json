@@ -2,7 +2,5 @@
   "name": "Frigo Malin",
   "homeassistant": "2025.1.0",
   "render_readme": true,
-  "zip_release": true,
-  "filename": "frigo_malin.zip",
   "country": ["FR", "BE", "CH", "CA"]
 }
