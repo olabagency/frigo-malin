@@ -7,6 +7,21 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.1.0] – 2026-11-08
+
+### Ajouté
+
+- Onglet **Courses** : la liste de courses de Home Assistant, en direct, rangée par rayon (fruits et légumes, crèmerie, épicerie…). On coche, on supprime, on vide le panier, et les changements faits ailleurs (app HA, autre téléphone) apparaissent tout de suite.
+- **Ajout rapide** depuis l'onglet Courses ou le bouton 🛒+ en haut de chaque écran. On écrit librement (« 2 kg de pommes, lait ») ou on touche un de ses articles habituels : les suggestions apprennent de ce que vous ajoutez.
+- **Depuis le menu** : ajout en un geste des ingrédients des repas planifiés cette semaine ou la semaine prochaine.
+- Pas de doublons : ajouter des tomates déjà sur la liste additionne les quantités (500 g + 300 g → 800 g) au lieu de créer une deuxième ligne.
+- Le nom des recettes concernées s'affiche sous chaque ingrédient, quand la liste le permet.
+- Pastille sur l'onglet Courses avec le nombre d'articles à acheter.
+
+### Données
+
+- Vos données sont converties automatiquement au démarrage pour accueillir l'historique des courses.
+
 ## [1.0.2] – 2026-11-08
 
 ### Corrigé

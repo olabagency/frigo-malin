@@ -33,7 +33,7 @@ from .const import (
 )
 from .drive import CONNECTORS
 from .importer import RecipeImportError, async_import_recipe
-from .parsing import aggregate_shopping, parse_excluded
+from .parsing import aggregate_shopping, merge_into_list, parse_excluded, parse_list_text, shopping_key
 
 if TYPE_CHECKING:
     from . import FrigoData
@@ -81,19 +81,58 @@ def _plan_items(data: FrigoData, entries: list[dict[str, Any]]) -> list[dict[str
     return aggregate_shopping(batch, excluded)
 
 
-async def _add_to_list(hass: HomeAssistant, data: FrigoData, texts: list[str]) -> str:
+# Fonction « description sur un article » des listes todo (TodoListEntityFeature.SET_DESCRIPTION_ON_ITEM).
+_TODO_SET_DESCRIPTION = 64
+
+
+async def _add_to_list(
+    hass: HomeAssistant, data: FrigoData, items: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Ajoute des ingrédients à la liste de courses en fusionnant avec ce qui y est déjà.
+
+    `items` : {"name", "quantity", "unit"} et, en option, "recipes" (titres des recettes).
+    """
     entity_id = _shopping_entity(hass, data)
     if entity_id is None:
         raise HomeAssistantError(
             "Aucune liste de courses trouvée. Ajoutez l'intégration « Liste de courses » "
             "ou choisissez une liste dans les options de Frigo Malin."
         )
-    for text in texts:
-        await hass.services.async_call(
-            "todo", "add_item", {"item": text}, target={"entity_id": entity_id}, blocking=True
+    target = {"entity_id": entity_id}
+    try:
+        response = await hass.services.async_call(
+            "todo", "get_items", {"status": ["needs_action"]}, target=target, blocking=True, return_response=True
         )
+        existing = (response or {}).get(entity_id, {}).get("items", [])
+    except HomeAssistantError:
+        existing = []
+
     state = hass.states.get(entity_id)
-    return state.name if state else entity_id
+    supports_description = bool(state and int(state.attributes.get("supported_features", 0)) & _TODO_SET_DESCRIPTION)
+    recipes_by_key = {shopping_key(i["name"]): i.get("recipes") or [] for i in items}
+
+    added, updated, skipped = [], [], []
+    for op in merge_into_list(existing, items):
+        if op["op"] == "add":
+            payload: dict[str, Any] = {"item": op["text"]}
+            recipes = recipes_by_key.get(shopping_key(parse_list_text(op["text"])["name"]))
+            if supports_description and recipes:
+                payload["description"] = "Pour : " + ", ".join(recipes)
+            await hass.services.async_call("todo", "add_item", payload, target=target, blocking=True)
+            added.append(op["text"])
+        elif op["op"] == "update":
+            await hass.services.async_call(
+                "todo", "update_item", {"item": op["uid"], "rename": op["text"]}, target=target, blocking=True
+            )
+            updated.append(op["text"])
+        else:
+            skipped.append(op["text"])
+    return {
+        "list_name": state.name if state else entity_id,
+        "added": added,
+        "updated": updated,
+        "skipped": skipped,
+    }
 
 
 def _error(connection: websocket_api.ActiveConnection, msg_id: int, err: Exception) -> None:
@@ -117,6 +156,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_plan_delete,
         ws_shopping_preview,
         ws_shopping_add,
+        ws_shopping_suggestions,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -316,10 +356,10 @@ async def ws_plan_add(hass: HomeAssistant, connection: websocket_api.ActiveConne
 
     result: dict[str, Any] = {"entry": entry, "added": [], "list_name": None, "shopping_error": None}
     if _options(data).get(CONF_AUTO_SHOPPING, True):
-        texts = [item["text"] for item in _plan_items(data, [entry])]
         try:
-            result["list_name"] = await _add_to_list(hass, data, texts)
-            result["added"] = texts
+            summary = await _add_to_list(hass, data, _plan_items(data, [entry]))
+            result["list_name"] = summary["list_name"]
+            result["added"] = summary["added"] + summary["updated"]
             result["entry"] = data.store.update_plan(entry["id"], in_shopping_list=True)
         except HomeAssistantError as err:
             result["shopping_error"] = str(err)
@@ -395,18 +435,45 @@ def ws_shopping_preview(
         vol.Required("type"): "frigo_malin/shopping/add",
         vol.Required("items"): [str],
         vol.Optional("entry_ids", default=[]): [str],
+        vol.Optional("quick", default=False): bool,
     }
 )
 @websocket_api.async_response
 async def ws_shopping_add(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Ajoute des articles écrits librement (« 2 kg de pommes », « lait ») ou issus du menu."""
     data = _data(hass)
     texts = [t.strip() for t in msg["items"] if t.strip()]
+    parsed = [parse_list_text(t) for t in texts]
+    for item in parsed:
+        item["name"] = item["name"][:1].upper() + item["name"][1:]
     try:
-        list_name = await _add_to_list(hass, data, texts)
+        summary = await _add_to_list(hass, data, parsed)
     except HomeAssistantError as err:
         _error(connection, msg["id"], err)
         return
     for entry_id in msg["entry_ids"]:
         if entry_id in data.store.plan:
             data.store.update_plan(entry_id, in_shopping_list=True)
-    connection.send_result(msg["id"], {"added": len(texts), "list_name": list_name})
+    if msg["quick"]:
+        data.store.record_shopping([item["name"] for item in parsed])
+    connection.send_result(
+        msg["id"],
+        {
+            "added": len(summary["added"]) + len(summary["updated"]),
+            "new": summary["added"],
+            "updated": summary["updated"],
+            "skipped": summary["skipped"],
+            "list_name": summary["list_name"],
+        },
+    )
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "frigo_malin/shopping/suggestions", vol.Optional("limit", default=12): int}
+)
+@callback
+def ws_shopping_suggestions(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Articles souvent ajoutés à la main, pour l'ajout rapide."""
+    connection.send_result(msg["id"], {"suggestions": _data(hass).store.shopping_suggestions(msg["limit"])})

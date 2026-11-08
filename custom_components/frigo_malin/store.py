@@ -11,7 +11,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_SERVINGS, SLOTS, STORAGE_KEY, STORAGE_MINOR_VERSION, STORAGE_VERSION
-from .parsing import normalize_ingredient
+from .parsing import normalize_ingredient, shopping_key
 
 
 def _int(value: Any, default: int | None = None) -> int | None:
@@ -35,10 +35,9 @@ class _MigratingStore(Store[dict[str, Any]]):
         self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
     ) -> dict[str, Any]:
         data = dict(old_data)
-        # Exemple pour une future version :
-        # if old_major_version == 1 and old_minor_version < 2:
-        #     for recipe in data.get("recipes", []):
-        #         recipe.setdefault("nouveau_champ", valeur_par_defaut)
+        if old_major_version == 1 and old_minor_version < 2:
+            # 1.1.0 : historique des articles ajoutés à la liste de courses.
+            data.setdefault("shopping_history", {})
         if old_major_version > STORAGE_VERSION:
             raise NotImplementedError("Données créées par une version plus récente de Frigo Malin")
         return data
@@ -53,12 +52,15 @@ class FrigoStore:
         self.plan: dict[str, dict[str, Any]] = {}
         # Dernière version de l'intégration qui a ouvert ces données (pour annoncer les mises à jour).
         self.last_version: str | None = None
+        # Articles ajoutés à la main, pour proposer des suggestions : clé -> {name, count, last}.
+        self.shopping_history: dict[str, dict[str, Any]] = {}
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
         self.recipes = {r["id"]: r for r in data.get("recipes", [])}
         self.plan = {e["id"]: e for e in data.get("plan", [])}
         self.last_version = data.get("last_version")
+        self.shopping_history = data.get("shopping_history", {})
 
     def set_last_version(self, version: str) -> None:
         self.last_version = version
@@ -69,7 +71,33 @@ class FrigoStore:
             "last_version": self.last_version,
             "recipes": list(self.recipes.values()),
             "plan": list(self.plan.values()),
+            "shopping_history": self.shopping_history,
         }
+
+    # ------------------------------------------------------------------ courses
+
+    def record_shopping(self, names: list[str]) -> None:
+        """Retient les articles ajoutés à la main, pour les suggérer ensuite."""
+        now = dt_util.utcnow().isoformat()
+        for name in names:
+            key = shopping_key(name)
+            if not key:
+                continue
+            entry = self.shopping_history.setdefault(key, {"name": name, "count": 0})
+            entry["name"] = name
+            entry["count"] += 1
+            entry["last"] = now
+        # On garde les 200 articles les plus utilisés.
+        if len(self.shopping_history) > 200:
+            keep = sorted(self.shopping_history.items(), key=lambda kv: kv[1]["count"], reverse=True)[:200]
+            self.shopping_history = dict(keep)
+        self._save()
+
+    def shopping_suggestions(self, limit: int = 12) -> list[dict[str, Any]]:
+        items = sorted(
+            self.shopping_history.values(), key=lambda e: (e["count"], e.get("last", "")), reverse=True
+        )
+        return [{"name": e["name"], "count": e["count"]} for e in items[:limit]]
 
     def _save(self) -> None:
         self._store.async_delay_save(self._data, 1)

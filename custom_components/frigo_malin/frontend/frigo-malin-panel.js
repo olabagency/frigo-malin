@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.0.2";
+const FM_VERSION = "1.1.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -133,6 +133,10 @@ const FOOD_EMOJIS = [
   [/pizza/, "🍕"], [/burger/, "🍔"], [/soupe|veloute|potage/, "🍲"], [/tajine|couscous/, "🍛"],
   [/gateau|cake|fondant|moelleux|cheesecake/, "🍰"], [/tarte|quiche|tourte/, "🥧"], [/crepe|pancake|gaufre/, "🥞"],
   [/omelette/, "🍳"], [/gratin|cocotte|mijote|ragout|bourguignon|blanquette|hachis/, "🥘"], [/wrap|burrito/, "🌯"],
+  [/cafe\b/, "☕"], [/\bthe\b|infusion|tisane/, "🍵"], [/papier toilette|mouchoir|sopalin|essuie/, "🧻"],
+  [/lessive|adoucissant/, "🧺"], [/savon|gel douche|shampo/, "🧼"], [/eponge|vaisselle|nettoyant/, "🧽"],
+  [/dentifrice|brosse a dent/, "🪥"], [/couche/, "👶"], [/jus\b/, "🧃"], [/soda|coca|limonade/, "🥤"],
+  [/cereale/, "🥣"], [/clementine|mandarine/, "🍊"],
   [/taco/, "🌮"], [/sushi|maki/, "🍣"], [/cookie|biscuit|sable/, "🍪"], [/glace|sorbet/, "🍨"], [/sandwich|croque/, "🥪"],
 ];
 /* Mots qui désignent un plat : prioritaires sur les ingrédients pour l'image d'une recette. */
@@ -156,6 +160,39 @@ function dishEmoji(title) {
 
 const emojiFor = (title) => dishEmoji(title) || EMOJIS[hashHue(title) % EMOJIS.length];
 const ingEmoji = (name) => foodEmoji(name) || "🥄";
+
+/* Rayons du magasin, dans l'ordre où on les parcourt habituellement. */
+const AISLES = [
+  { key: "fruits", label: "Fruits et légumes", emoji: "🥦" },
+  { key: "pain", label: "Boulangerie", emoji: "🥖" },
+  { key: "viande", label: "Boucherie et poissonnerie", emoji: "🥩" },
+  { key: "frais", label: "Crèmerie et frais", emoji: "🧀" },
+  { key: "epicerie", label: "Épicerie", emoji: "🥫" },
+  { key: "surgeles", label: "Surgelés", emoji: "🧊" },
+  { key: "boissons", label: "Boissons", emoji: "🧃" },
+  { key: "maison", label: "Maison et hygiène", emoji: "🧴" },
+  { key: "autres", label: "Autres", emoji: "🛒" },
+];
+/* Règles testées dans cet ordre (les cas particuliers d'abord). */
+const AISLE_RULES = [
+  ["maison", /papier|sopalin|essuie|lessive|vaisselle|eponge|savon|shampo|dentifrice|gel douche|poubelle|deodorant|coton|mouchoir|couche|nettoyant|javel|film alimentaire|aluminium|cuisson|piles?\b|ampoule|adoucissant|rasoir|serviette/],
+  ["surgeles", /surgele|glace|sorbet|frites|congel|\bbatonnets? de poisson/],
+  ["boissons", /\beau\b|\bjus\b|soda|\bvin\b|biere|cidre|limonade|\bcoca\b|\bthe glace|sirop/],
+  ["epicerie", /lait de coco|en boite|pois chiche|haricots? (rouges?|blancs?)|concentre|coulis|sauce tomate|pelees|concassees|cornichon|olive|capre|thon\b(?! frais)/],
+  ["pain", /\bpain|baguette|brioche|croissant|viennoiserie|biscotte|tortilla|\bwrap/],
+  ["frais", /\blait\b|creme|yaourt|yogourt|fromage|emmental|gruyere|comte|mozzarella|parmesan|chevre|feta|camembert|raclette|ricotta|mascarpone|beurre|\boeuf|margarine|skyr|petits? suisses?|pate (brisee|feuilletee|sablee|a pizza)|gnocchi|tofu|houmous|traiteur/],
+  ["viande", /poulet|dinde|volaille|canard|boeuf|steak|veau|agneau|porc|viande|hache|saucisse|merguez|jambon|lardon|bacon|chorizo|saucisson|crevette|gambas|saumon|cabillaud|poisson|truite|sardine|maquereau|colin|moule|huitre|escalope|\broti|\bcote|cuisse|thon frais|lapin/],
+  ["fruits", /tomate|carotte|pomme|patate|oignon|echalote|\bail\b|champignon|courgette|concombre|poivron|piment|aubergine|brocoli|\bchou|salade|laitue|epinard|roquette|mache|poireau|blette|\bmais\b|avocat|citron|orange|clementine|mandarine|banane|fraise|framboise|myrtille|cerise|raisin|peche|abricot|nectarine|poire|ananas|mangue|kiwi|melon|pasteque|legume|fruit|persil|basilic|coriandre|menthe|ciboulette|thym|romarin|aneth|gingembre|radis|navet|celeri|fenouil|asperge|haricots? verts?|petits? pois|courge|potiron|butternut|betterave|artichaut|figue|prune|grenade|endive/],
+  ["epicerie", /farine|sucre|\bsel\b|poivre|huile|vinaigre|\briz\b|pates?\b|spaghetti|tagliatelle|penne|lasagne|nouille|coquillette|semoule|quinoa|boulgour|lentille|haricot|conserve|sauce|moutarde|ketchup|mayonnaise|epice|cumin|curry|paprika|cannelle|muscade|bouillon|chocolat|cacao|cafe|\bthe\b|cereale|biscuit|miel|confiture|levure|maizena|fecule|noix|noisette|amande|cacahuete|pistache|chips|compote|puree|soupe|vanille|herbes de provence/],
+];
+
+function aisleOf(text) {
+  const t = foldText(String(text || "").replace(/\(.*?\)/g, " "));
+  for (const [key, re] of AISLE_RULES) if (re.test(t)) return key;
+  return "autres";
+}
+
+const DEFAULT_QUICK = ["Lait", "Pain", "Œufs", "Beurre", "Bananes", "Pommes", "Yaourts", "Café", "Fromage râpé", "Papier toilette"];
 
 async function resizeImage(file, maxSide = 1568, quality = 0.85) {
   const url = URL.createObjectURL(file);
@@ -249,6 +286,38 @@ nav.tabs button {
 nav.tabs button .pill { display: inline-flex; padding: 4px 18px; border-radius: 16px; transition: background .2s; }
 nav.tabs button.active { color: var(--fm-primary); }
 nav.tabs button.active .pill { background: var(--fm-soft); }
+nav.tabs .pill { position: relative; }
+.badge {
+  position: absolute; top: -4px; right: 2px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--fm-error); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center;
+}
+.toolbar .icon-btn.cart { position: relative; }
+.toolbar .icon-btn.cart .badge { top: 4px; right: 2px; }
+
+/* Courses */
+.quickbox .row { margin-bottom: 10px; }
+.chip.add { border-style: dashed; }
+.chip.add ha-icon { --mdc-icon-size: 16px; }
+.aisle { padding: 4px 14px 6px; }
+.aisle-title { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 14px; color: var(--fm-text2); padding: 10px 0 4px; }
+.aisle-title .n { margin-left: auto; font-size: 12px; }
+.li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--fm-divider); }
+.aisle-title + .li { border-top: 0; }
+.li .tick {
+  width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--fm-divider); background: none; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center; color: transparent; padding: 0;
+}
+.li .tick ha-icon { --mdc-icon-size: 18px; }
+.li.done .tick { background: var(--fm-success); border-color: var(--fm-success); color: #fff; }
+.li .txt { flex: 1; min-width: 0; cursor: pointer; }
+.li .txt .d { font-size: 12px; color: var(--fm-text2); }
+.li.done .txt > div:first-child { text-decoration: line-through; color: var(--fm-text2); }
+.li .icon-btn { width: 36px; height: 36px; color: var(--fm-text2); }
+.li .icon-btn ha-icon { --mdc-icon-size: 20px; }
+.list-head { display: flex; align-items: center; gap: 8px; margin: 18px 0 10px; }
+.list-head h3 { margin: 0; flex: 1; }
+.menu-card .row { justify-content: space-between; }
+.menu-card .stat { font-size: 14px; }
 
 h2 { font-size: 22px; font-weight: 500; margin: 4px 0 4px; }
 h3 { font-size: 17px; font-weight: 500; margin: 20px 0 8px; }
@@ -479,6 +548,8 @@ class FrigoMalinPanel extends HTMLElement {
       filter: "all",
       fridge: this._freshFridge(),
       week: { start: mondayOf(new Date()), entries: [], loading: false },
+      list: { items: [], loaded: false, error: null, quick: "", showDone: false, menuWeek: "this", menu: null },
+      suggestions: [],
       stack: [],
       toast: null,
     };
@@ -525,10 +596,12 @@ class FrigoMalinPanel extends HTMLElement {
 
   connectedCallback() {
     if (this._hass && !this.shadowRoot.firstChild) this._render();
+    if (this._hass && this.s.config) this._subscribeList();
   }
 
   disconnectedCallback() {
     this._releaseWakeLock();
+    this._unsubscribeList();
   }
 
   async _init() {
@@ -543,6 +616,114 @@ class FrigoMalinPanel extends HTMLElement {
     }
     this.s.loaded = true;
     this._render();
+    this._subscribeList();
+    this._loadSuggestions();
+  }
+
+  /* ---------------- liste de courses de Home Assistant, en direct */
+
+  get listEntity() {
+    return this.s.config && this.s.config.shopping_list && this.s.config.shopping_list.entity_id;
+  }
+
+  async _subscribeList() {
+    const entity_id = this.listEntity;
+    if (!entity_id || this._listUnsub || this._listSubscribing) return;
+    this._listSubscribing = true;
+    try {
+      this._listUnsub = await this._hass.connection.subscribeMessage(
+        (msg) => {
+          this.s.list.items = msg.items || [];
+          this.s.list.loaded = true;
+          this.s.list.error = null;
+          this._renderListParts();
+        },
+        { type: "todo/item/subscribe", entity_id }
+      );
+    } catch (err) {
+      this.s.list.error = this._err(err);
+      this.s.list.loaded = true;
+      this._renderListParts();
+    }
+    this._listSubscribing = false;
+  }
+
+  _unsubscribeList() {
+    if (this._listUnsub) {
+      try {
+        this._listUnsub();
+      } catch (_) {
+        /* déjà fermé */
+      }
+      this._listUnsub = null;
+    }
+  }
+
+  async _loadSuggestions() {
+    try {
+      const res = await this._ws("shopping/suggestions", { limit: 16 });
+      this.s.suggestions = res.suggestions.map((x) => x.name);
+    } catch (_) {
+      this.s.suggestions = [];
+    }
+    this._renderListParts();
+  }
+
+  _todo(service, data) {
+    return this._hass.callService("todo", service, data, { entity_id: this.listEntity });
+  }
+
+  get pendingItems() {
+    return this.s.list.items.filter((i) => i.status !== "completed");
+  }
+
+  /* Met à jour les morceaux qui dépendent de la liste sans toucher aux champs en cours de saisie. */
+  _renderListParts() {
+    const root = this.shadowRoot;
+    const nav = root.getElementById("nav");
+    if (nav) nav.innerHTML = this._tplNav();
+    const header = root.getElementById("header");
+    if (header) header.innerHTML = this._tplHeader();
+    const list = root.getElementById("shop-list");
+    if (list) list.innerHTML = this._tplShopList();
+    root.querySelectorAll(".quick-sugg").forEach((el) => (el.innerHTML = this._tplQuickChips()));
+    const count = root.getElementById("quick-count");
+    if (count) count.innerHTML = this._tplQuickCount();
+  }
+
+  async _quickAdd(texts) {
+    const items = texts.flatMap((t) => String(t).split(/[,;\n]/)).map((t) => t.trim()).filter(Boolean);
+    if (!items.length) return;
+    if (!this.listEntity) {
+      this._toast("Aucune liste de courses : choisissez-en une dans les options de Frigo Malin.", true);
+      return;
+    }
+    try {
+      const res = await this._ws("shopping/add", { items, quick: true });
+      const parts = [];
+      if (res.new.length) parts.push(`${res.new.join(", ")} ajouté${res.new.length > 1 ? "s" : ""}`);
+      if (res.updated.length) parts.push(`${res.updated.join(", ")} mis à jour`);
+      if (res.skipped.length) parts.push(`${res.skipped.join(", ")} déjà sur la liste`);
+      this._toast(parts.join(" · ") || "Rien à ajouter");
+      this._loadSuggestions();
+    } catch (err) {
+      this._toast(this._err(err), true);
+    }
+  }
+
+  async _loadMenuInfo() {
+    const l = this.s.list;
+    const start = l.menuWeek === "next" ? addDays(mondayOf(new Date()), 7) : mondayOf(new Date());
+    try {
+      const res = await this._ws("plan/list", { start, end: addDays(start, 6) });
+      l.menu = { start, meals: res.entries.length, pending: res.entries.filter((e) => !e.in_shopping_list).length };
+    } catch (err) {
+      l.menu = { start, meals: 0, pending: 0, error: this._err(err) };
+    }
+    if (this.s.tab === "shopping") {
+      const el = this.shadowRoot.getElementById("shop-menu");
+      if (el) el.innerHTML = this._tplMenuCard();
+    }
   }
 
   _ws(type, payload = {}) {
@@ -650,6 +831,10 @@ class FrigoMalinPanel extends HTMLElement {
       case "tab":
         s.tab = d.tab;
         if (s.tab === "week") this._loadWeek();
+        if (s.tab === "shopping") {
+          this._loadMenuInfo();
+          this._subscribeList();
+        }
         this._render();
         this.shadowRoot.querySelector("main")?.scrollTo(0, 0);
         return;
@@ -681,6 +866,59 @@ class FrigoMalinPanel extends HTMLElement {
         this.shadowRoot.getElementById("new-ing")?.focus();
         return;
       }
+      case "quick-open":
+        s.stack.push({ type: "quick" });
+        this._renderOverlay();
+        this.shadowRoot.getElementById("quick-input-sheet")?.focus();
+        return;
+      case "quick-add": {
+        const text = s.list.quick;
+        s.list.quick = "";
+        this.shadowRoot.querySelectorAll(".quick-input").forEach((input) => (input.value = ""));
+        await this._quickAdd([text]);
+        return;
+      }
+      case "quick-chip":
+        await this._quickAdd([d.name]);
+        return;
+      case "list-toggle": {
+        const item = s.list.items.find((i) => i.uid === d.uid);
+        if (!item) return;
+        const status = item.status === "completed" ? "needs_action" : "completed";
+        item.status = status;
+        this._renderListParts();
+        this._todo("update_item", { item: d.uid, status }).catch((err) => this._toast(this._err(err), true));
+        return;
+      }
+      case "list-remove":
+        s.list.items = s.list.items.filter((i) => i.uid !== d.uid);
+        this._renderListParts();
+        this._todo("remove_item", { item: [d.uid] }).catch((err) => this._toast(this._err(err), true));
+        return;
+      case "list-show-done":
+        s.list.showDone = !s.list.showDone;
+        this._renderListParts();
+        return;
+      case "list-clear-done":
+        this._todo("remove_completed_items", {})
+          .then(() => this._toast("Panier vidé"))
+          .catch((err) => this._toast(this._err(err), true));
+        return;
+      case "go-shopping":
+        s.stack = [];
+        s.tab = "shopping";
+        this._loadMenuInfo();
+        this._render();
+        return;
+      case "menu-week":
+        s.list.menuWeek = d.value;
+        s.list.menu = null;
+        this._render();
+        this._loadMenuInfo();
+        return;
+      case "menu-add":
+        this._shoppingPreview(s.list.menu ? s.list.menu.start : mondayOf(new Date()));
+        return;
       case "set":
         if (d.path === "top.onlyNew" && this.top && this.top.type === "shopping") {
           this.top.onlyNew = false;
@@ -812,7 +1050,7 @@ class FrigoMalinPanel extends HTMLElement {
         this._mealServings(d.id, Number(d.delta));
         return;
       case "shop-preview":
-        this._shoppingPreview();
+        this._shoppingPreview(s.week.start);
         return;
       case "shop-add":
         this._shoppingAdd();
@@ -1124,19 +1362,18 @@ class FrigoMalinPanel extends HTMLElement {
     }
   }
 
-  async _shoppingPreview() {
-    const w = this.s.week;
-    const item = { type: "shopping", loading: true, items: [], entry_ids: [], list_name: null, onlyNew: true };
+  async _shoppingPreview(start = this.s.week.start) {
+    const item = { type: "shopping", start, loading: true, items: [], entry_ids: [], list_name: null, onlyNew: true };
     this.s.stack.push(item);
     this._renderOverlay();
-    await this._loadShopping(item, w);
+    await this._loadShopping(item);
   }
 
-  async _loadShopping(item, w = this.s.week) {
+  async _loadShopping(item) {
     item.loading = true;
     this._renderOverlay();
     try {
-      const res = await this._ws("shopping/preview", { start: w.start, end: addDays(w.start, 6), only_new: item.onlyNew });
+      const res = await this._ws("shopping/preview", { start: item.start, end: addDays(item.start, 6), only_new: item.onlyNew });
       item.items = res.items.map((i) => ({ ...i, checked: true }));
       item.entry_ids = res.entry_ids;
       item.list_name = res.list_name;
@@ -1159,6 +1396,7 @@ class FrigoMalinPanel extends HTMLElement {
       for (const e of this.s.week.entries) if (top.entry_ids.includes(e.id)) e.in_shopping_list = true;
       this._toast(`${res.added} article${res.added > 1 ? "s" : ""} ajouté${res.added > 1 ? "s" : ""} à « ${res.list_name} »`);
       this._render();
+      if (this.s.tab === "shopping") this._loadMenuInfo();
     } catch (err) {
       top.loading = false;
       this._renderOverlay();
@@ -1238,6 +1476,7 @@ class FrigoMalinPanel extends HTMLElement {
       ${this._narrow ? `<button class="icon-btn" data-action="menu" aria-label="Menu">${icon("menu")}</button>` : `<span style="width:12px"></span>`}
       ${LOGO_SVG}
       <div class="title" style="margin-left:10px">Frigo Malin</div>
+      ${this.listEntity ? `<button class="icon-btn cart" data-action="quick-open" aria-label="Ajout rapide à la liste de courses" title="Ajout rapide">${icon("cart-plus")}</button>` : ""}
     </div>`;
   }
 
@@ -1246,11 +1485,13 @@ class FrigoMalinPanel extends HTMLElement {
       ["fridge", "fridge-outline", "fridge", "Frigo"],
       ["recipes", "book-open-page-variant-outline", "book-open-page-variant", "Recettes"],
       ["week", "calendar-week-outline", "calendar-week", "Semaine"],
+      ["shopping", "cart-outline", "cart", "Courses"],
     ];
+    const pending = this.pendingItems.length;
     return `<div class="inner">${tabs
       .map(
         ([key, ic, icActive, label]) =>
-          `<button class="${this.s.tab === key ? "active" : ""}" data-action="tab" data-tab="${key}" aria-label="${label}"><span class="pill">${icon(this.s.tab === key ? icActive : ic)}</span>${label}</button>`
+          `<button class="${this.s.tab === key ? "active" : ""}" data-action="tab" data-tab="${key}" aria-label="${label}"><span class="pill">${icon(this.s.tab === key ? icActive : ic)}${key === "shopping" && pending ? `<span class="badge">${pending > 99 ? "99+" : pending}</span>` : ""}</span>${label}</button>`
       )
       .join("")}</div>`;
   }
@@ -1278,6 +1519,7 @@ class FrigoMalinPanel extends HTMLElement {
   _tplTabContent() {
     if (this.s.tab === "recipes") return this._tplRecipes();
     if (this.s.tab === "week") return this._tplWeek();
+    if (this.s.tab === "shopping") return this._tplShopping();
     return this._tplFridge();
   }
 
@@ -1392,6 +1634,125 @@ class FrigoMalinPanel extends HTMLElement {
 
       <button class="btn big block" data-action="suggest" ${f.ingredients.length ? "" : "disabled"}>${icon("chef-hat")} Trouver des recettes</button>
       <button class="btn text block" style="margin-top:8px" data-action="fridge-reset">${icon("restart")} Tout recommencer</button>`;
+  }
+
+  /* ---------------- onglet Courses */
+
+  _tplQuickInput(id) {
+    return `<div class="row">
+      <input class="input grow quick-input" id="${id}" placeholder="Ex. : 2 kg de pommes, lait" value="${esc(this.s.list.quick)}" data-model="list.quick" data-enter="quick-add" enterkeyhint="send" autocomplete="off">
+      <button class="btn" data-action="quick-add" aria-label="Ajouter">${icon("plus")}</button>
+    </div>`;
+  }
+
+  _quickNames() {
+    const onList = new Set(this.pendingItems.map((i) => foldText(i.summary.replace(/\(.*?\)/g, "")).trim().replace(/s$/, "")));
+    const seen = new Set();
+    const names = [];
+    for (const name of [...this.s.suggestions, ...DEFAULT_QUICK]) {
+      const key = foldText(name).trim().replace(/s$/, "");
+      if (seen.has(key) || onList.has(key)) continue;
+      seen.add(key);
+      names.push(name);
+      if (names.length >= 10) break;
+    }
+    return names;
+  }
+
+  _tplQuickChips() {
+    return this._quickNames()
+      .map((name) => `<button class="chip add" data-action="quick-chip" data-name="${esc(name)}">${ingEmoji(name) === "🥄" ? icon("plus") : ingEmoji(name)} ${esc(name)}</button>`)
+      .join("");
+  }
+
+  _tplQuickCount() {
+    const n = this.pendingItems.length;
+    const name = this.s.config && this.s.config.shopping_list && this.s.config.shopping_list.name;
+    return `${icon("cart-outline")} ${n} article${n > 1 ? "s" : ""} à acheter${name ? ` dans « ${esc(name)} »` : ""}`;
+  }
+
+  _tplMenuCard() {
+    const l = this.s.list;
+    const m = l.menu;
+    let stat = `<span class="spinner sm"></span>`;
+    if (m && m.error) stat = esc(m.error);
+    else if (m && !m.meals) stat = "Aucun repas planifié.";
+    else if (m) stat = m.pending ? `<b>${m.pending}</b> repas sur ${m.meals} pas encore dans la liste.` : `Les ${m.meals} repas sont déjà dans la liste ✓`;
+    return `
+      <div class="row" style="margin-bottom:10px">
+        <div class="row">${bubble("calendar-week", COLORS.indigo)}<h3 style="margin:0">Depuis le menu</h3></div>
+      </div>
+      <div class="chips" style="margin-bottom:10px">
+        <button class="chip ${l.menuWeek === "this" ? "on" : ""}" data-action="menu-week" data-value="this">Cette semaine</button>
+        <button class="chip ${l.menuWeek === "next" ? "on" : ""}" data-action="menu-week" data-value="next">Semaine prochaine</button>
+      </div>
+      <p class="stat muted" style="margin:0 0 12px">${stat}</p>
+      <button class="btn tonal block" data-action="menu-add" ${m && m.meals ? "" : "disabled"}>${icon("cart-arrow-down")} Ajouter les ingrédients des recettes</button>`;
+  }
+
+  _tplShopList() {
+    const l = this.s.list;
+    if (!this.listEntity) {
+      return `<div class="alert">Aucune liste de courses trouvée. Ajoutez l'intégration « Liste de courses » de Home Assistant, ou choisissez une liste dans les options de Frigo Malin.</div>`;
+    }
+    if (l.error) return `<div class="alert">${esc(l.error)}</div>`;
+    if (!l.loaded) return `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`;
+    const pending = this.pendingItems;
+    const done = l.items.filter((i) => i.status === "completed");
+    const row = (item) => `<div class="li ${item.status === "completed" ? "done" : ""}">
+        <button class="tick" data-action="list-toggle" data-uid="${esc(item.uid)}" aria-label="${item.status === "completed" ? "Remettre dans la liste" : "Dans le panier"}">${icon("check")}</button>
+        <span class="ing-emoji">${ingEmoji(item.summary)}</span>
+        <div class="txt" data-action="list-toggle" data-uid="${esc(item.uid)}"><div>${esc(item.summary)}</div>${item.description ? `<div class="d">${esc(item.description)}</div>` : ""}</div>
+        <button class="icon-btn" data-action="list-remove" data-uid="${esc(item.uid)}" aria-label="Supprimer">${icon("close")}</button>
+      </div>`;
+
+    let html = `<div class="list-head">${bubble("format-list-checks", COLORS.green)}<h3>À acheter</h3><span class="muted small">${pending.length}</span></div>`;
+    if (!pending.length) {
+      html += `<div class="empty" style="padding:20px 16px"><div class="emoji">🛒</div><p>La liste est vide. Ajoutez un article ci-dessus ou les ingrédients de votre menu.</p></div>`;
+    } else {
+      const groups = {};
+      for (const item of pending) (groups[aisleOf(item.summary)] = groups[aisleOf(item.summary)] || []).push(item);
+      for (const aisle of AISLES) {
+        const items = groups[aisle.key];
+        if (!items) continue;
+        html += `<div class="card aisle">
+          <div class="aisle-title"><span>${aisle.emoji}</span>${aisle.label}<span class="n">${items.length}</span></div>
+          ${items.map(row).join("")}
+        </div>`;
+      }
+    }
+    if (done.length) {
+      html += `<div class="list-head">
+          ${bubble("cart-check", COLORS.teal)}<h3>Dans le panier (${done.length})</h3>
+          <button class="btn text" data-action="list-show-done">${icon(l.showDone ? "chevron-up" : "chevron-down")} ${l.showDone ? "Masquer" : "Voir"}</button>
+        </div>
+        ${l.showDone ? `<div class="card aisle">${done.map(row).join("")}</div>` : ""}
+        <button class="btn danger block" data-action="list-clear-done">${icon("broom")} Vider le panier</button>`;
+    }
+    return html;
+  }
+
+  _tplShopping() {
+    return `
+      <div class="card quickbox">
+        <div class="row" style="margin-bottom:10px">${bubble("lightning-bolt", COLORS.amber)}<h3 style="margin:0">Ajout rapide</h3></div>
+        ${this._tplQuickInput("quick-input")}
+        <div class="chips quick-sugg">${this._tplQuickChips()}</div>
+      </div>
+      <div class="card menu-card" id="shop-menu">${this._tplMenuCard()}</div>
+      <div id="shop-list">${this._tplShopList()}</div>`;
+  }
+
+  _tplQuickSheet() {
+    const body = `
+      <p class="muted small row" id="quick-count" style="margin-top:0">${this._tplQuickCount()}</p>
+      ${this._tplQuickInput("quick-input-sheet")}
+      <p class="muted small" style="margin:14px 0 8px">Vos habitués — un appui suffit :</p>
+      <div class="chips quick-sugg">${this._tplQuickChips()}</div>
+      <p class="muted small" style="margin-top:18px">Astuce : séparez plusieurs articles par des virgules. Les quantités d'un même article s'additionnent.</p>`;
+    const footer = `<button class="btn tonal grow" data-action="close">${icon("check")} Terminé</button>
+      <button class="btn grow" data-action="go-shopping">${icon("cart")} Voir la liste</button>`;
+    return this._tplSheet("Ajout rapide", body, footer);
   }
 
   _tplStepper(path, value, suffix = "", min = 1, max = 30) {
@@ -1567,7 +1928,9 @@ class FrigoMalinPanel extends HTMLElement {
       case "pick":
         return this._tplPick(top);
       case "shopping":
-        return this._tplShopping(top);
+        return this._tplShoppingSheet(top);
+      case "quick":
+        return this._tplQuickSheet();
       default:
         return "";
     }
@@ -1762,7 +2125,7 @@ class FrigoMalinPanel extends HTMLElement {
       .join("");
   }
 
-  _tplShopping(top) {
+  _tplShoppingSheet(top) {
     let body;
     if (top.loading && !top.items.length) {
       body = `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`;

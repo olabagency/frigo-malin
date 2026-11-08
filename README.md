@@ -18,6 +18,9 @@ Prenez le frigo en photo depuis l'app Home Assistant. L'IA reconnaît les ingré
 - Portions ajustables : les quantités se recalculent.
 - Mode « cuisine » : une étape à la fois, en grand, l'écran reste allumé. On passe d'une étape à l'autre en balayant l'écran.
 
+**🛒 Liste de courses**
+Un onglet Courses affiche votre liste de Home Assistant en direct, rangée par rayon. Ajout rapide en texte libre (« 2 kg de pommes, lait ») ou en un appui sur vos articles habituels, depuis l'onglet ou le bouton 🛒+ présent partout. Les ingrédients des repas planifiés s'ajoutent en un geste, et un article déjà présent voit sa quantité augmenter au lieu d'être dupliqué.
+
 **🗓️ Menu de la semaine et liste de courses**
 Planifiez vos repas midi et soir. Les ingrédients s'ajoutent automatiquement à une liste de courses de Home Assistant, avec les quantités adaptées au nombre de personnes et regroupées entre recettes (500 g + 600 g de tomates = 1,1 kg). Le sel, le poivre et l'eau ne sont jamais ajoutés (modifiable).
 

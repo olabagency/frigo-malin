@@ -263,7 +263,8 @@ _TO_BASE = {"kg": ("g", 1000), "g": ("g", 1), "mg": ("g", 0.001), "l": ("ml", 10
 
 
 def _fold(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text.lower())
+    text = text.lower().replace("œ", "oe").replace("æ", "ae")
+    text = unicodedata.normalize("NFKD", text)
     text = "".join(c for c in text if not unicodedata.combining(c))
     text = re.sub(r"\(.*?\)", "", text)
     text = re.sub(r"[^a-z0-9 ]+", " ", text)
@@ -332,6 +333,85 @@ def aggregate_shopping(
         items.append(item)
     items.sort(key=lambda i: _fold(i["name"]))
     return items
+
+
+def parse_list_text(text: str) -> dict[str, Any]:
+    """Lit un article de liste : « Tomates (500 g) », « 2 kg de pommes » ou « lait »."""
+    text = " ".join(str(text).split())
+    match = re.match(r"^(.*?)\s*\(([^()]*)\)\s*$", text)
+    if match and match.group(1):
+        amount = parse_ingredient(f"{match.group(2)} _")
+        if amount["name"] == "_" and (amount["quantity"] is not None or amount["unit"]):
+            return {"name": match.group(1).strip(), "quantity": amount["quantity"], "unit": amount["unit"]}
+        return {"name": text, "quantity": None, "unit": ""}
+    return parse_ingredient(text)
+
+
+def shopping_key(name: str) -> str:
+    """Clé pour reconnaître le même article malgré accents, pluriels et majuscules."""
+    return _fold(name)
+
+
+def merge_into_list(
+    existing: list[dict[str, Any]], new_items: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Décide comment ajouter des articles à une liste qui en contient déjà.
+
+    `existing` : articles non cochés de la liste, {"uid", "summary"}.
+    `new_items` : ingrédients {"name", "quantity", "unit"}.
+    Renvoie des opérations : {"op": "add", "text"}, {"op": "update", "uid", "text", "previous"}
+    ou {"op": "skip", "text"} (déjà sur la liste, sans quantité à ajouter).
+    """
+    # État courant de chaque article, y compris ceux ajoutés pendant ce même appel.
+    current: list[dict[str, Any]] = []
+    for item in existing:
+        parsed = parse_list_text(item.get("summary") or "")
+        current.append({"uid": item.get("uid"), "summary": item.get("summary"), **parsed, "op": None})
+
+    def base(ing: dict[str, Any]) -> tuple[float | None, str]:
+        unit = ing.get("unit") or ""
+        base_unit, mult = _TO_BASE.get(unit, (unit, 1))
+        qty = ing.get("quantity")
+        return (float(qty) * mult if qty is not None else None), base_unit
+
+    for ing in new_items:
+        name = str(ing.get("name") or "").strip()
+        if not name:
+            continue
+        qty, unit = base(ing)
+        key = shopping_key(name)
+        same_name = [c for c in current if shopping_key(c["name"]) == key]
+        target = None
+        for cand in same_name:
+            cand_qty, cand_unit = base(cand)
+            if qty is None or cand_qty is None or cand_unit == unit:
+                target = cand
+                break
+        if target is None:
+            text = format_ingredient(ing)
+            current.append({"uid": None, "summary": text, "name": name, "quantity": ing.get("quantity"), "unit": ing.get("unit") or "", "op": "add"})
+            continue
+        if qty is None:
+            if target["op"] is None:
+                target["op"] = "skip"
+            continue
+        target_qty, _ = base(target)
+        total = (target_qty or 0) + qty
+        shown_qty, shown_unit = _display_unit(total, unit)
+        target["quantity"], target["unit"] = shown_qty, shown_unit
+        if target["op"] in (None, "skip"):
+            target["op"] = "update"
+
+    operations = []
+    for item in current:
+        text = format_ingredient(item)
+        if item["op"] == "add":
+            operations.append({"op": "add", "text": text})
+        elif item["op"] == "update":
+            operations.append({"op": "update", "uid": item["uid"], "text": text, "previous": item["summary"]})
+        elif item["op"] == "skip":
+            operations.append({"op": "skip", "text": item["summary"]})
+    return operations
 
 
 # --------------------------------------------------------------------------

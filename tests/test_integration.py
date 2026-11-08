@@ -49,6 +49,18 @@ async def _setup(hass: HomeAssistant) -> MockConfigEntry:
     return entry
 
 
+async def _clear_list(hass: HomeAssistant) -> None:
+    """La liste de courses de HA est enregistrée sur disque : on repart d'une liste vide."""
+    result = await hass.services.async_call(
+        "todo", "get_items", target={"entity_id": "todo.shopping_list"}, blocking=True, return_response=True
+    )
+    uids = [item["uid"] for item in result["todo.shopping_list"]["items"]]
+    if uids:
+        await hass.services.async_call(
+            "todo", "remove_item", {"item": uids}, target={"entity_id": "todo.shopping_list"}, blocking=True
+        )
+
+
 async def _todo_items(hass: HomeAssistant) -> list[str]:
     result = await hass.services.async_call(
         "todo", "get_items", target={"entity_id": "todo.shopping_list"}, blocking=True, return_response=True
@@ -86,15 +98,14 @@ async def test_panel_recipes_plan_and_shopping(hass: HomeAssistant, hass_ws_clie
     patched = await ws("recipes/patch", recipe_id=recipe["id"], favorite=True, notes="Top")
     assert patched["result"]["recipe"]["favorite"] is True
 
-    before = await _todo_items(hass)
+    await _clear_list(hass)
 
     # Planifier pour 2 personnes : les quantités sont divisées par deux, le sel est ignoré.
     added = await ws("plan/add", date="2026-11-09", slot="dinner", recipe_id=recipe["id"], servings=2)
     assert added["success"], added
     assert added["result"]["added"] == ["Crème (25 cl)", "Pommes de terre (500 g)"]
     assert added["result"]["entry"]["in_shopping_list"] is True
-    after = await _todo_items(hass)
-    assert sorted(after[len(before) :]) == ["Crème (25 cl)", "Pommes de terre (500 g)"]
+    assert sorted(await _todo_items(hass)) == ["Crème (25 cl)", "Pommes de terre (500 g)"]
 
     listed = await ws("plan/list", start="2026-11-09", end="2026-11-15")
     assert len(listed["result"]["entries"]) == 1
@@ -106,6 +117,10 @@ async def test_panel_recipes_plan_and_shopping(hass: HomeAssistant, hass_ws_clie
 
     shop = await ws("shopping/add", items=["Beurre"], entry_ids=[])
     assert shop["result"]["added"] == 1
+
+    # Replanifier la même recette : les quantités s'additionnent au lieu de créer des doublons.
+    await ws("plan/add", date="2026-11-10", slot="lunch", recipe_id=recipe["id"], servings=2)
+    assert sorted(await _todo_items(hass)) == ["Beurre", "Crème (50 cl)", "Pommes de terre (1 kg)"]
 
     deleted = await ws("recipes/delete", recipe_id=recipe["id"])
     assert deleted["success"]
@@ -212,3 +227,42 @@ async def test_update_is_announced(hass: HomeAssistant, hass_storage) -> None:
 async def test_first_install_is_silent(hass: HomeAssistant) -> None:
     await _setup(hass)
     assert "frigo_malin_update" not in hass.data.get("persistent_notification", {})
+
+
+async def test_quick_add_merges_and_suggests(hass: HomeAssistant, hass_ws_client) -> None:
+    await _setup(hass)
+    await _clear_list(hass)
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    first = await ws("shopping/add", items=["lait", "2 kg de pommes", "œufs"], quick=True)
+    assert first["success"], first
+    assert first["result"]["new"] == ["Lait", "Pommes (2 kg)", "Œufs"]
+
+    second = await ws("shopping/add", items=["Lait", "pommes (500 g)", "pain"], quick=True)
+    assert second["result"]["new"] == ["Pain"]
+    assert second["result"]["updated"] == ["Pommes (2,5 kg)"]
+    assert second["result"]["skipped"] == ["Lait"]
+    assert sorted(await _todo_items(hass)) == ["Lait", "Pain", "Pommes (2,5 kg)", "Œufs"]
+
+    suggestions = await ws("shopping/suggestions")
+    names = [s["name"] for s in suggestions["result"]["suggestions"]]
+    assert names[:2] == ["Lait", "Pommes"]
+    assert set(names) == {"Lait", "Pommes", "Œufs", "Pain"}
+
+
+async def test_storage_migration_from_1_0(hass: HomeAssistant, hass_storage) -> None:
+    """Les données de la 1.0.x (format 1.1) sont converties : l'historique des courses est ajouté."""
+    from custom_components.frigo_malin.const import STORAGE_KEY
+
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": STORAGE_KEY,
+        "data": {"last_version": "1.0.2", "recipes": [], "plan": []},
+    }
+    entry = await _setup(hass)
+    assert entry.runtime_data.store.shopping_history == {}
