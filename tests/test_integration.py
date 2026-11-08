@@ -266,3 +266,156 @@ async def test_storage_migration_from_1_0(hass: HomeAssistant, hass_storage) -> 
     }
     entry = await _setup(hass)
     assert entry.runtime_data.store.shopping_history == {}
+
+
+async def test_settings_photo_and_sensor(hass: HomeAssistant, hass_ws_client, aioclient_mock) -> None:
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    await _setup(hass)
+    await _clear_list(hass)
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    saved = await ws(
+        "settings/save",
+        settings={"members": [{"name": "A", "age": "adult"}, {"name": "B", "age": "adult"}, {"name": "C", "age": "child"}]},
+    )
+    assert saved["success"], saved
+    assert saved["result"]["default_servings"] == 3
+    config = await ws("config")
+    assert len(config["result"]["settings"]["members"]) == 3
+    assert config["result"]["default_servings"] == 3
+
+    # Photo d'une page de livre -> recette (non enregistrée tant qu'on ne valide pas).
+    aioclient_mock.post(
+        "https://api.anthropic.com/v1/messages",
+        json={
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": json.dumps({"recipes": [{
+                "title": "Tarte aux pommes de mamie", "servings": 6,
+                "ingredients": [{"quantity": 4, "unit": "", "name": "pommes"}], "steps": ["Étaler la pâte", "Cuire"],
+            }]})}],
+        },
+    )
+    photo = await ws("recipes/from_photo", images=[{"image": "aGVsbG8=", "mime": "image/jpeg"}, {"image": "aGVsbG8="}])
+    assert photo["success"], photo
+    assert photo["result"]["recipe"]["title"] == "Tarte aux pommes de mamie"
+    sent = aioclient_mock.mock_calls[-1][2]
+    assert [b["type"] for b in sent["messages"][0]["content"]] == ["image", "image", "text"]
+
+    # Capteur « prochain repas ».
+    state = hass.states.get("sensor.frigo_malin_prochain_repas")
+    assert state is not None and state.state == "Rien de prévu"
+    recipe = (await ws("recipes/save", recipe={**photo["result"]["recipe"], "image": "https://img.example/tarte.jpg"}))["result"]["recipe"]
+    tomorrow = (dt_util.now() + timedelta(days=1)).date().isoformat()
+    await ws("plan/add", date=tomorrow, slot="dinner", recipe_id=recipe["id"])
+    await hass.async_block_till_done()
+    state = hass.states.get("sensor.frigo_malin_prochain_repas")
+    assert state.state == "Tarte aux pommes de mamie"
+    assert state.attributes["label"] == "Demain soir"
+    assert state.attributes["servings"] == 6
+    assert state.attributes["entity_picture"] == "https://img.example/tarte.jpg"
+    assert state.attributes["url"].startswith("/frigo-malin?recipe=")
+
+
+async def test_plan_week_with_leftovers(hass: HomeAssistant, hass_ws_client, aioclient_mock) -> None:
+    await _setup(hass)
+    await _clear_list(hass)
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    favourite = (await ws("recipes/save", recipe={"title": "Gratin", "servings": 4, "ingredients": ["1 kg de pommes de terre"], "steps": ["Cuire"]}))["result"]["recipe"]
+    aioclient_mock.post(
+        "https://api.anthropic.com/v1/messages",
+        json={"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({
+            "summary": "Un menu d'automne.",
+            "estimated_total": 30,
+            "meals": [
+                {"date": "2026-11-15", "slot": "dinner", "recipe_id": None, "estimated_cost": 12,
+                 "note": "Préparez-en le double pour lundi.",
+                 "recipe": {"title": "Poulet rôti", "servings": 4, "prep_time": 15, "cook_time": 60,
+                            "ingredients": [{"quantity": 2, "unit": "", "name": "poulets"}], "steps": ["Rôtir"]}},
+                {"date": "2026-11-16", "slot": "dinner", "recipe_id": None, "estimated_cost": 6,
+                 "leftovers_from": {"date": "2026-11-15", "slot": "dinner"}, "note": "Avec les restes du poulet rôti.",
+                 "recipe": {"title": "Salade de poulet", "servings": 4,
+                            "ingredients": [{"quantity": 1, "unit": "", "name": "salade"}], "steps": ["Mélanger"]}},
+                {"date": "2026-11-17", "slot": "dinner", "recipe_id": favourite["id"], "recipe": None},
+                {"date": "2030-01-01", "slot": "dinner", "recipe_id": None, "recipe": {"title": "Hors sujet"}},
+            ],
+        })}]},
+    )
+    proposal = await ws(
+        "plan/generate",
+        slots=[{"date": "2026-11-15", "slot": "dinner"}, {"date": "2026-11-16", "slot": "dinner"}, {"date": "2026-11-17", "slot": "dinner"}],
+        budget=40,
+    )
+    assert proposal["success"], proposal
+    meals = proposal["result"]["meals"]
+    assert [m["title"] for m in meals] == ["Poulet rôti", "Salade de poulet", "Gratin"]
+    assert meals[1]["leftovers_from"] == {"date": "2026-11-15", "slot": "dinner"}
+    prompt = aioclient_mock.mock_calls[-1][2]["messages"][0]["content"][-1]["text"]
+    assert "novembre" in prompt and "40 €" in prompt and "Cuisine des restes" in prompt and favourite["id"] in prompt
+
+    applied = await ws("plan/apply", meals=meals, servings=4)
+    assert applied["success"], applied
+    assert len(applied["result"]["entries"]) == 3
+    assert applied["result"]["entries"][1]["note"] == "Avec les restes du poulet rôti."
+    assert sorted(await _todo_items(hass)) == ["Pommes de terre (1 kg)", "Poulets (2)", "Salade (1)"]
+    recipes = (await ws("recipes/list"))["result"]["recipes"]
+    assert {r["title"] for r in recipes} == {"Gratin", "Poulet rôti", "Salade de poulet"}
+
+
+async def test_store_reminder(hass: HomeAssistant, hass_ws_client) -> None:
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    await _setup(hass)
+    await _clear_list(hass)
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    # Un téléphone (app HA) rattaché à une personne, une zone « Leclerc ».
+    phone_entry = MockConfigEntry(domain="mobile_app")
+    phone_entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=phone_entry.entry_id, identifiers={("mobile_app", "pixel")}, name="Pixel 7"
+    )
+    er.async_get(hass).async_get_or_create(
+        "device_tracker", "mobile_app", "pixel", device_id=device.id, suggested_object_id="pixel_7"
+    )
+    calls = async_mock_service(hass, "notify", "mobile_app_pixel_7")
+    hass.states.async_set("zone.leclerc", "0", {"friendly_name": "Leclerc"})
+    hass.states.async_set("person.adrien", "not_home", {"device_trackers": ["device_tracker.pixel_7"]})
+
+    settings = (await ws("settings/save", settings={"stores": [{"name": "Leclerc Saint-Jean", "zone": "zone.leclerc"}]}))["result"]["settings"]
+    store_id = settings["stores"][0]["id"]
+
+    # Liste vide : pas de rappel.
+    hass.states.async_set("person.adrien", "Leclerc", {"device_trackers": ["device_tracker.pixel_7"]})
+    await hass.async_block_till_done()
+    assert calls == []
+
+    await ws("shopping/add", items=["lait", "pain"])
+    hass.states.async_set("person.adrien", "not_home", {"device_trackers": ["device_tracker.pixel_7"]})
+    # On neutralise le délai entre deux rappels pour simuler une nouvelle visite.
+    from custom_components.frigo_malin import reminder as reminder_module
+
+    with patch.object(reminder_module, "COOLDOWN", reminder_module.timedelta(0)):
+        hass.states.async_set("person.adrien", "Leclerc", {"device_trackers": ["device_tracker.pixel_7"]})
+        await hass.async_block_till_done()
+    assert len(calls) == 1
+    data = calls[0].data
+    assert data["title"] == "🛒 2 articles à acheter chez Leclerc Saint-Jean"
+    assert data["message"] == "Lait, Pain"
+    assert data["data"]["clickAction"] == f"/frigo-malin?tab=shopping&store={store_id}"

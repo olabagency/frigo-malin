@@ -33,6 +33,7 @@ from .const import (
 )
 from .drive import CONNECTORS
 from .importer import RecipeImportError, async_import_recipe
+from .household import household_context, household_servings
 from .parsing import aggregate_shopping, merge_into_list, parse_excluded, parse_list_text, shopping_key
 
 if TYPE_CHECKING:
@@ -54,7 +55,22 @@ def _options(data: FrigoData) -> dict[str, Any]:
 
 
 def _servings_default(data: FrigoData) -> int:
-    return int(_options(data).get(CONF_DEFAULT_SERVINGS) or DEFAULT_SERVINGS)
+    """Portions par défaut : celles du foyer s'il est décrit, sinon le réglage de l'intégration."""
+    fallback = int(_options(data).get(CONF_DEFAULT_SERVINGS) or DEFAULT_SERVINGS)
+    return household_servings(data.store.settings, fallback)
+
+
+def _decode_image(image: str) -> str:
+    """Vérifie une image envoyée en base64 et la renvoie sans l'en-tête data:."""
+    if image.startswith("data:"):
+        image = image.split(",", 1)[-1]
+    try:
+        size = len(base64.b64decode(image, validate=True))
+    except (binascii.Error, ValueError) as err:
+        raise vol.Invalid("Image illisible") from err
+    if size > MAX_IMAGE_BYTES:
+        raise vol.Invalid("Image trop lourde")
+    return image
 
 
 def _shopping_entity(hass: HomeAssistant, data: FrigoData) -> str | None:
@@ -157,6 +173,10 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_shopping_preview,
         ws_shopping_add,
         ws_shopping_suggestions,
+        ws_settings_save,
+        ws_recipes_from_photo,
+        ws_plan_generate,
+        ws_plan_apply,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -181,6 +201,7 @@ def ws_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, m
             "auto_shopping": bool(options.get(CONF_AUTO_SHOPPING, True)),
             "shopping_list": {"entity_id": entity_id, "name": state.name if state else None},
             "drives": [{"key": key, "name": cls.name} for key, cls in CONNECTORS.items()],
+            "settings": data.store.settings,
             "is_admin": connection.user.is_admin,
             "entry_id": data.entry.entry_id,
         },
@@ -313,6 +334,7 @@ async def ws_fridge_suggest(
             count=msg["count"],
             servings=msg.get("servings") or _servings_default(data),
             notes=msg["notes"],
+            household=household_context(data.store.settings),
         )
     except AIError as err:
         _error(connection, msg["id"], err)
@@ -343,13 +365,14 @@ def ws_plan_list(hass: HomeAssistant, connection: websocket_api.ActiveConnection
         vol.Required("slot"): vol.In(SLOTS),
         vol.Required("recipe_id"): str,
         vol.Optional("servings"): vol.All(int, vol.Range(min=1, max=30)),
+        vol.Optional("note", default=""): str,
     }
 )
 @websocket_api.async_response
 async def ws_plan_add(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     data = _data(hass)
     try:
-        entry = data.store.add_plan(msg["date"], msg["slot"], msg["recipe_id"], msg.get("servings"))
+        entry = data.store.add_plan(msg["date"], msg["slot"], msg["recipe_id"], msg.get("servings"), msg["note"])
     except KeyError:
         connection.send_error(msg["id"], "not_found", "Recette introuvable")
         return
@@ -477,3 +500,155 @@ def ws_shopping_suggestions(
 ) -> None:
     """Articles souvent ajoutés à la main, pour l'ajout rapide."""
     connection.send_result(msg["id"], {"suggestions": _data(hass).store.shopping_suggestions(msg["limit"])})
+
+
+# ---------------------------------------------------------------------- réglages du foyer
+
+
+@websocket_api.websocket_command({vol.Required("type"): "frigo_malin/settings/save", vol.Required("settings"): dict})
+@callback
+def ws_settings_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    data = _data(hass)
+    settings = data.store.save_settings(msg["settings"])
+    connection.send_result(msg["id"], {"settings": settings, "default_servings": _servings_default(data)})
+
+
+# ---------------------------------------------------------------------- photo d'une recette
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "frigo_malin/recipes/from_photo",
+        vol.Required("images"): vol.All(
+            [{vol.Required("image"): str, vol.Optional("mime", default="image/jpeg"): vol.In(ALLOWED_MIME)}],
+            vol.Length(min=1, max=4),
+        ),
+    }
+)
+@websocket_api.async_response
+async def ws_recipes_from_photo(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Lit une recette photographiée (page de livre, fiche manuscrite…) : 1 à 4 pages."""
+    try:
+        images = [(_decode_image(i["image"]), i["mime"]) for i in msg["images"]]
+    except vol.Invalid as err:
+        connection.send_error(msg["id"], "invalid_format", str(err))
+        return
+    try:
+        recipe = await _data(hass).ai.recipe_from_photos(images)
+    except AIError as err:
+        _error(connection, msg["id"], err)
+        return
+    recipe["origin"] = "photo"
+    connection.send_result(msg["id"], {"recipe": recipe})
+
+
+# ---------------------------------------------------------------------- planifier la semaine
+
+DAY_NAMES = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "frigo_malin/plan/generate",
+        vol.Required("slots"): vol.All(
+            [{vol.Required("date"): _parse_date, vol.Required("slot"): vol.In(SLOTS)}], vol.Length(min=1, max=21)
+        ),
+        vol.Optional("servings"): vol.All(int, vol.Range(min=1, max=30)),
+        vol.Optional("budget"): vol.Any(None, vol.All(int, vol.Range(min=5, max=2000))),
+        vol.Optional("use_carnet", default=True): bool,
+        vol.Optional("leftovers", default=True): bool,
+        vol.Optional("notes", default=""): str,
+    }
+)
+@websocket_api.async_response
+async def ws_plan_generate(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Propose un menu pour les créneaux choisis. Rien n'est enregistré avant plan/apply."""
+    data = _data(hass)
+    settings = data.store.settings
+    slots = []
+    for item in sorted(msg["slots"], key=lambda x: (x["date"], SLOTS.index(x["slot"]))):
+        day = item["date"]
+        weekend = day.weekday() >= 5
+        slots.append(
+            {
+                "date": day.isoformat(),
+                "slot": item["slot"],
+                "day": DAY_NAMES[day.weekday()],
+                "slot_label": "midi" if item["slot"] == "lunch" else "soir",
+                "max_time": settings["time_weekend"] if weekend else settings["time_weekday"],
+            }
+        )
+    carnet = []
+    if msg["use_carnet"]:
+        recipes = sorted(data.store.recipes.values(), key=lambda r: (not r.get("favorite"), r["title"].lower()))
+        carnet = [{"id": r["id"], "title": r["title"], "favorite": r.get("favorite")} for r in recipes[:80]]
+    budget = msg.get("budget", settings.get("budget_week"))
+    try:
+        proposal = await data.ai.plan_week(
+            slots,
+            servings=msg.get("servings") or _servings_default(data),
+            household=household_context(settings),
+            budget=budget,
+            carnet=carnet,
+            leftovers=msg["leftovers"],
+            notes=msg["notes"],
+            month=MONTHS[msg["slots"][0]["date"].month - 1],
+        )
+    except AIError as err:
+        _error(connection, msg["id"], err)
+        return
+    for meal in proposal["meals"]:
+        if meal["recipe_id"]:
+            recipe = data.store.recipes[meal["recipe_id"]]
+            meal["title"] = recipe["title"]
+            meal["time"] = (recipe.get("prep_time") or 0) + (recipe.get("cook_time") or 0) or None
+        else:
+            meal["title"] = meal["recipe"]["title"]
+            meal["time"] = (meal["recipe"].get("prep_time") or 0) + (meal["recipe"].get("cook_time") or 0) or None
+    proposal["budget"] = budget
+    connection.send_result(msg["id"], proposal)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "frigo_malin/plan/apply",
+        vol.Required("meals"): [dict],
+        vol.Optional("servings"): vol.All(int, vol.Range(min=1, max=30)),
+    }
+)
+@websocket_api.async_response
+async def ws_plan_apply(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Enregistre le menu proposé : nouvelles recettes dans le carnet, repas au menu, courses."""
+    data = _data(hass)
+    servings = msg.get("servings") or _servings_default(data)
+    entries = []
+    for meal in msg["meals"]:
+        try:
+            day = _parse_date(str(meal.get("date")))
+        except vol.Invalid:
+            continue
+        slot = meal.get("slot") if meal.get("slot") in SLOTS else "dinner"
+        recipe_id = meal.get("recipe_id")
+        if recipe_id not in data.store.recipes:
+            raw = meal.get("recipe")
+            if not isinstance(raw, dict) or not raw.get("title"):
+                continue
+            raw = {k: v for k, v in raw.items() if k not in ("uses", "missing")}
+            recipe_id = data.store.save_recipe({**raw, "origin": "ai"}, servings)["id"]
+        entries.append(data.store.add_plan(day, slot, recipe_id, servings, str(meal.get("note") or "")))
+
+    result: dict[str, Any] = {"entries": entries, "added": [], "list_name": None, "shopping_error": None}
+    if entries and _options(data).get(CONF_AUTO_SHOPPING, True):
+        try:
+            summary = await _add_to_list(hass, data, _plan_items(data, entries))
+            result["added"] = summary["added"] + summary["updated"]
+            result["list_name"] = summary["list_name"]
+            result["entries"] = [data.store.update_plan(e["id"], in_shopping_list=True) for e in entries]
+        except HomeAssistantError as err:
+            result["shopping_error"] = str(err)
+    connection.send_result(msg["id"], result)

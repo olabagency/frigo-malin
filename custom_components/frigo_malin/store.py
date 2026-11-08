@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from typing import Any
 from uuid import uuid4
@@ -11,6 +12,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_SERVINGS, SLOTS, STORAGE_KEY, STORAGE_MINOR_VERSION, STORAGE_VERSION
+from .household import normalize_settings
 from .parsing import normalize_ingredient, shopping_key
 
 
@@ -38,6 +40,9 @@ class _MigratingStore(Store[dict[str, Any]]):
         if old_major_version == 1 and old_minor_version < 2:
             # 1.1.0 : historique des articles ajoutés à la liste de courses.
             data.setdefault("shopping_history", {})
+        if old_major_version == 1 and old_minor_version < 3:
+            # 1.2.0 : réglages du foyer (profils, préférences, magasins).
+            data.setdefault("settings", normalize_settings(None))
         if old_major_version > STORAGE_VERSION:
             raise NotImplementedError("Données créées par une version plus récente de Frigo Malin")
         return data
@@ -54,6 +59,8 @@ class FrigoStore:
         self.last_version: str | None = None
         # Articles ajoutés à la main, pour proposer des suggestions : clé -> {name, count, last}.
         self.shopping_history: dict[str, dict[str, Any]] = {}
+        self.settings: dict[str, Any] = normalize_settings(None)
+        self._listeners: list[Callable[[], None]] = []
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
@@ -61,6 +68,7 @@ class FrigoStore:
         self.plan = {e["id"]: e for e in data.get("plan", [])}
         self.last_version = data.get("last_version")
         self.shopping_history = data.get("shopping_history", {})
+        self.settings = normalize_settings(data.get("settings"))
 
     def set_last_version(self, version: str) -> None:
         self.last_version = version
@@ -72,7 +80,20 @@ class FrigoStore:
             "recipes": list(self.recipes.values()),
             "plan": list(self.plan.values()),
             "shopping_history": self.shopping_history,
+            "settings": self.settings,
         }
+
+    # ------------------------------------------------------------------ réglages
+
+    def save_settings(self, raw: dict[str, Any]) -> dict[str, Any]:
+        self.settings = normalize_settings(raw)
+        self._save()
+        return self.settings
+
+    def add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Appelé à chaque modification (menu, recettes…). Renvoie de quoi se désabonner."""
+        self._listeners.append(listener)
+        return lambda: self._listeners.remove(listener) if listener in self._listeners else None
 
     # ------------------------------------------------------------------ courses
 
@@ -101,6 +122,8 @@ class FrigoStore:
 
     def _save(self) -> None:
         self._store.async_delay_save(self._data, 1)
+        for listener in list(self._listeners):
+            listener()
 
     # ------------------------------------------------------------------ recettes
 
@@ -157,7 +180,9 @@ class FrigoStore:
         entries = [e for e in self.plan.values() if start.isoformat() <= e["date"] <= end.isoformat()]
         return sorted(entries, key=lambda e: (e["date"], SLOTS.index(e["slot"]) if e["slot"] in SLOTS else 9))
 
-    def add_plan(self, day: date, slot: str, recipe_id: str, servings: int | None) -> dict[str, Any]:
+    def add_plan(
+        self, day: date, slot: str, recipe_id: str, servings: int | None, note: str = ""
+    ) -> dict[str, Any]:
         if recipe_id not in self.recipes:
             raise KeyError(recipe_id)
         entry = {
@@ -167,6 +192,7 @@ class FrigoStore:
             "recipe_id": recipe_id,
             "servings": _int(servings, self.recipes[recipe_id].get("servings") or DEFAULT_SERVINGS),
             "in_shopping_list": False,
+            "note": str(note or "")[:200],
         }
         self.plan[entry["id"]] = entry
         self._save()

@@ -7,6 +7,24 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.2.0] – 2026-11-08
+
+### Ajouté
+
+- **Recette en photo** : photographiez une page de livre, de magazine ou une fiche manuscrite (jusqu'à 4 pages). L'IA la recopie fidèlement, vous relisez, c'est dans le carnet.
+- **Planifier ma semaine** (onglet Semaine) : choisissez les repas à préparer, l'IA propose un menu équilibré, de saison, qui respecte votre budget et votre temps (rapide en semaine, plus élaboré le week-end). Vous retirez ce qui ne vous plaît pas, puis tout part au menu et dans la liste de courses.
+- **Cuisine des restes** : dans le menu proposé, un plat cuisiné en double se transforme plus tard en un autre repas (poulet rôti → salade de poulet), avec moins de courses au total.
+- **Réglages du foyer** (⚙️ en haut) : chaque personne avec son âge, son régime, ses allergies, ses épices et ce qu'elle n'aime pas ; temps disponible, budget, équipement, cuisines et objectifs. Toutes les propositions de l'IA en tiennent compte, et les portions sont calculées automatiquement (un enfant compte pour ½).
+- **Mode magasin** : rangez les rayons dans l'ordre de votre magasin ; la liste de courses suit cet ordre.
+- **Rappel en arrivant au magasin** : reliez un magasin à une zone Home Assistant. Quand quelqu'un y arrive et que la liste n'est pas vide, son téléphone reçoit « 🛒 12 articles à acheter » ; un appui ouvre la liste, rangée pour ce magasin.
+- **Carte de tableau de bord « Ce soir on mange… »** : photo du plat, temps, portions, restes, et boutons Cuisiner / Voir la recette. À ajouter depuis Modifier le tableau de bord → Ajouter une carte.
+- **Capteur `sensor.frigo_malin_prochain_repas`** : le prochain repas planifié, avec sa photo et ses détails, pour vos automatisations.
+- Liens directs vers l'app (`/frigo-malin?tab=shopping`, `?recipe=…&cook=1`).
+
+### Données
+
+- Vos données sont converties automatiquement au démarrage pour accueillir les réglages du foyer.
+
 ## [1.1.0] – 2026-11-08
 
 ### Ajouté

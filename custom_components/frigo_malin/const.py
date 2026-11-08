@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "frigo_malin"
 # Version de l'intégration. Ne pas modifier à la main : utiliser scripts/bump_version.py.
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 # Fournisseurs d'IA
 CONF_PROVIDER = "provider"
@@ -41,7 +41,7 @@ STATIC_URL = "/frigo_malin_static"
 # STORAGE_VERSION pour un changement de structure, et prévoir la migration dans store.py.
 STORAGE_KEY = f"{DOMAIN}.data"
 STORAGE_VERSION = 1
-STORAGE_MINOR_VERSION = 2
+STORAGE_MINOR_VERSION = 3
 
 CHANGELOG_URL = "https://github.com/olabagency/frigo-malin/blob/main/CHANGELOG.md"
 

@@ -18,6 +18,15 @@ Prenez le frigo en photo depuis l'app Home Assistant. L'IA reconnaît les ingré
 - Portions ajustables : les quantités se recalculent.
 - Mode « cuisine » : une étape à la fois, en grand, l'écran reste allumé. On passe d'une étape à l'autre en balayant l'écran.
 
+**📖 Recette en photo**
+Une page de livre, de magazine ou la fiche manuscrite de mamie : une photo (ou plusieurs pages) et la recette arrive dans le carnet.
+
+**✨ Planifier ma semaine**
+Un bouton, et l'IA propose un menu équilibré, de saison, dans votre budget, rapide en semaine et plus élaboré le week-end. Avec la cuisine des restes : le poulet rôti du dimanche devient la salade du lundi.
+
+**👨‍👩‍👧 Profils du foyer**
+Âge, régime, allergies, épices et dégoûts de chacun, équipement de la cuisine, temps disponible, budget : toutes les propositions en tiennent compte, et les portions sont calculées pour vous.
+
 **🛒 Liste de courses**
 Un onglet Courses affiche votre liste de Home Assistant en direct, rangée par rayon. Ajout rapide en texte libre (« 2 kg de pommes, lait ») ou en un appui sur vos articles habituels, depuis l'onglet ou le bouton 🛒+ présent partout. Les ingrédients des repas planifiés s'ajoutent en un geste, et un article déjà présent voit sa quantité augmenter au lieu d'être dupliqué.
 
@@ -66,6 +75,12 @@ N'importe quelle liste « todo » fonctionne : la liste de courses intégrée, B
 ### Côté coûts
 
 Chaque photo analysée et chaque série d'idées font un appel à l'IA, facturé par votre fournisseur sur votre clé. L'import d'une recette depuis une adresse est gratuit quand le site publie sa recette dans un format standard (c'est le cas de Marmiton) ; l'IA n'est appelée qu'en secours.
+
+## Avec la maison connectée
+
+- **Mode magasin et rappel** : dans ⚙️ Réglages → Magasins, rangez les rayons dans l'ordre de votre magasin et reliez-le à une zone Home Assistant (Paramètres → Zones). Quand quelqu'un y arrive avec l'app Home Assistant sur son téléphone, il reçoit la liste ; un appui l'ouvre, rangée pour ce magasin.
+- **Carte « Ce soir on mange… »** : Modifier le tableau de bord → Ajouter une carte → *Frigo Malin – Ce soir on mange*.
+- **Capteur `sensor.frigo_malin_prochain_repas`** : nom du prochain repas, avec en attributs le créneau (`label` : « Ce soir »…), les portions, les temps, la photo et un lien direct. Exemple d'automatisation : annoncer le repas du soir sur les enceintes à 18 h.
 
 ## Mises à jour
 

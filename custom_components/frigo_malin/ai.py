@@ -25,6 +25,8 @@ ANTHROPIC_VERSION = "2026-10-21"
 _ANTHROPIC_FALLBACK_MODELS = ("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5")
 OPENAI_URL = "https://api.openai.com/v1"
 TIMEOUT = aiohttp.ClientTimeout(total=180)
+# Planifier une semaine entière demande une longue réponse.
+LONG_TIMEOUT = aiohttp.ClientTimeout(total=420)
 
 
 class AIError(Exception):
@@ -116,9 +118,11 @@ class AIClient:
     def _openai_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
 
-    async def _post(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
+    async def _post(
+        self, url: str, headers: dict[str, str], payload: dict[str, Any], timeout: aiohttp.ClientTimeout = TIMEOUT
+    ) -> dict[str, Any]:
         try:
-            async with self._session.post(url, headers=headers, json=payload, timeout=TIMEOUT) as resp:
+            async with self._session.post(url, headers=headers, json=payload, timeout=timeout) as resp:
                 body = await resp.text()
                 if resp.status in (401, 403):
                     raise InvalidAuth("Clé API refusée : vérifiez-la dans les réglages de l'intégration.")
@@ -137,16 +141,22 @@ class AIClient:
         except aiohttp.ClientError as err:
             raise AIError("Impossible de joindre le fournisseur d'IA.") from err
 
-    async def _complete(self, prompt: str, image: tuple[str, str] | None = None) -> Any:
+    async def _complete(
+        self,
+        prompt: str,
+        image: tuple[str, str] | None = None,
+        images: list[tuple[str, str]] | None = None,
+        max_tokens: int = 16000,
+        timeout: aiohttp.ClientTimeout = TIMEOUT,
+    ) -> Any:
         """Envoie une demande et renvoie le JSON de la réponse."""
+        pictures = list(images or []) + ([image] if image else [])
         if self.provider == PROVIDER_ANTHROPIC:
-            content: list[dict[str, Any]] = []
-            if image:
-                content.append(_image_part_anthropic(*image))
+            content: list[dict[str, Any]] = [_image_part_anthropic(*pic) for pic in pictures]
             content.append({"type": "text", "text": prompt})
             payload: dict[str, Any] = {
                 "model": self.model,
-                "max_tokens": 16000,
+                "max_tokens": max_tokens,
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": content}],
             }
@@ -154,14 +164,14 @@ class AIClient:
             if self.model in _ANTHROPIC_FALLBACK_MODELS:
                 payload["fallbacks"] = "default"
                 beta = "server-side-fallback-2026-07-01"
-            data = await self._post(f"{ANTHROPIC_URL}/messages", self._anthropic_headers(beta), payload)
+            data = await self._post(f"{ANTHROPIC_URL}/messages", self._anthropic_headers(beta), payload, timeout)
+            if data.get("stop_reason") == "max_tokens":
+                _LOGGER.warning("Réponse de l'IA coupée (limite de longueur atteinte)")
             if data.get("stop_reason") == "refusal":
                 raise AIError("L'IA a refusé cette demande. Essayez avec une autre photo ou une autre formulation.")
             text = "".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
         elif self.provider == PROVIDER_OPENAI:
-            user_content: list[dict[str, Any]] = []
-            if image:
-                user_content.append(_image_part_openai(*image))
+            user_content: list[dict[str, Any]] = [_image_part_openai(*pic) for pic in pictures]
             user_content.append({"type": "text", "text": prompt})
             payload = {
                 "model": self.model,
@@ -170,9 +180,9 @@ class AIClient:
                     {"role": "user", "content": user_content},
                 ],
                 "response_format": {"type": "json_object"},
-                "max_completion_tokens": 16000,
+                "max_completion_tokens": max_tokens,
             }
-            data = await self._post(f"{OPENAI_URL}/chat/completions", self._openai_headers(), payload)
+            data = await self._post(f"{OPENAI_URL}/chat/completions", self._openai_headers(), payload, timeout)
             choice = (data.get("choices") or [{}])[0]
             message = choice.get("message") or {}
             if message.get("refusal"):
@@ -209,6 +219,7 @@ class AIClient:
         count: int = 3,
         servings: int = 4,
         notes: str = "",
+        household: str = "",
     ) -> list[dict[str, Any]]:
         count = max(1, min(int(count), 6))
         prompt = (
@@ -218,8 +229,10 @@ class AIClient:
             f"Propose {count} recettes pour {servings} personnes qui utilisent au maximum ces ingrédients "
             "et demandent le moins d'achats possible. Étapes claires et numérotables, une action par étape.\n"
         )
+        if household:
+            prompt += f"\nProfil du foyer :\n{household}\n"
         if notes.strip():
-            prompt += f"Contraintes du foyer : {notes.strip()}\n"
+            prompt += f"Envies pour cette fois : {notes.strip()}\n"
         prompt += f"\nRéponds avec ce JSON :\n{RECIPE_SCHEMA}"
         data = await self._complete(prompt)
         recipes = data.get("recipes", []) if isinstance(data, dict) else []
@@ -239,6 +252,129 @@ class AIClient:
         recipe = clean_ai_recipe(recipes[0])
         recipe["source_url"] = url
         return recipe
+
+    async def recipe_from_photos(self, images: list[tuple[str, str]]) -> dict[str, Any]:
+        """Lit une recette photographiée (livre, fiche manuscrite…)."""
+        data = await self._complete(PHOTO_PROMPT, images=images)
+        recipes = data.get("recipes", []) if isinstance(data, dict) else []
+        if not recipes or not recipes[0].get("title"):
+            raise AIError("Je ne trouve pas de recette sur cette photo. Essayez avec une photo plus nette, bien à plat.")
+        return clean_ai_recipe(recipes[0])
+
+    async def plan_week(
+        self,
+        slots: list[dict[str, Any]],
+        servings: int,
+        household: str = "",
+        budget: int | None = None,
+        carnet: list[dict[str, Any]] | None = None,
+        leftovers: bool = True,
+        notes: str = "",
+        month: str = "",
+    ) -> dict[str, Any]:
+        """Propose un menu complet pour les créneaux demandés."""
+        lines = [
+            f"Prépare le menu de la semaine pour {servings} personnes, en France, au mois de {month}.",
+            "Créneaux à remplir (un repas par créneau, dans cet ordre) :",
+        ]
+        for slot in slots:
+            lines.append(
+                f"- {slot['date']} ({slot['day']}) {slot['slot_label']} : {slot['max_time']} minutes maximum en tout"
+            )
+        lines += [
+            "",
+            "Règles :",
+            "- Menu varié et équilibré : pas deux fois la même protéine ou le même féculent de suite, des légumes à chaque repas.",
+            "- Produits de saison pour ce mois-là en France.",
+            "- Respecte le temps maximum de chaque créneau (préparation + cuisson) : rapide en semaine, plus élaboré le week-end.",
+            "- Recettes concises : 7 étapes au plus, phrases courtes. Quantités pour le nombre de personnes indiqué.",
+            "- estimated_cost : coût estimé du repas en euros, prix de supermarché français.",
+        ]
+        if budget:
+            lines.append(f"- Budget : {budget} € maximum pour l'ensemble de ces repas. Reste en dessous.")
+        if leftovers:
+            lines += [
+                "- Cuisine des restes : prévois 1 à 3 enchaînements où un plat est cuisiné en plus grande quantité"
+                " (ses ingrédients en tiennent compte, et sa note le dit : « Préparez-en le double… »)"
+                " et réutilisé dans un repas suivant de la semaine, transformé (poulet rôti → salade de poulet,"
+                " riz → riz sauté, ratatouille → tarte). Le repas qui utilise les restes n'inclut PAS ces restes dans"
+                " ses ingrédients, renseigne leftovers_from avec la date et le créneau du plat d'origine,"
+                " et sa note dit « Avec les restes de … ».",
+            ]
+        if carnet:
+            lines.append(
+                "- Tu peux reprendre 1 à 3 recettes du carnet du foyer (de préférence les favorites) :"
+                " indique alors seulement recipe_id et mets recipe à null. Carnet :"
+            )
+            for r in carnet:
+                lines.append(f"  - id={r['id']} : {r['title']}" + (" (favorite)" if r.get("favorite") else ""))
+        if household:
+            lines += ["", "Profil du foyer :", household]
+        if notes.strip():
+            lines += ["", f"Envies pour cette semaine : {notes.strip()}"]
+        lines += [
+            "",
+            "Réponds avec ce JSON :",
+            """{"summary": "Deux phrases sur l'esprit de ce menu",
+ "estimated_total": 58.5,
+ "meals": [{"date": "2026-11-09", "slot": "dinner", "recipe_id": null,
+   "recipe": {"title": "...", "description": "...", "servings": 4, "prep_time": 10, "cook_time": 20,
+              "ingredients": [{"quantity": 200, "unit": "g", "name": "farine"}], "steps": ["..."], "tags": ["..."]},
+   "leftovers_from": null, "note": "", "estimated_cost": 7.5}]}
+slot vaut "lunch" (midi) ou "dinner" (soir). leftovers_from vaut null ou {"date": "...", "slot": "..."}.""",
+        ]
+        data = await self._complete("\n".join(lines), max_tokens=32000, timeout=LONG_TIMEOUT)
+        if not isinstance(data, dict):
+            raise AIError("La réponse de l'IA était illisible. Réessayez.")
+        wanted = {(s["date"], s["slot"]) for s in slots}
+        known = {r["id"] for r in carnet or []}
+        meals = []
+        for raw in data.get("meals") or []:
+            if not isinstance(raw, dict) or (raw.get("date"), raw.get("slot")) not in wanted:
+                continue
+            recipe_id = raw.get("recipe_id") if raw.get("recipe_id") in known else None
+            recipe = clean_ai_recipe(raw["recipe"]) if isinstance(raw.get("recipe"), dict) else None
+            if not recipe_id and not (recipe and recipe["title"]):
+                continue
+            source = raw.get("leftovers_from")
+            meals.append(
+                {
+                    "date": raw["date"],
+                    "slot": raw["slot"],
+                    "recipe_id": recipe_id,
+                    "recipe": None if recipe_id else recipe,
+                    "note": str(raw.get("note") or "").strip()[:200],
+                    "leftovers_from": source if isinstance(source, dict) and source.get("date") else None,
+                    "estimated_cost": _float_or_none(raw.get("estimated_cost")),
+                }
+            )
+            wanted.discard((raw["date"], raw["slot"]))
+        if not meals:
+            raise AIError("L'IA n'a pas proposé de menu. Réessayez.")
+        meals.sort(key=lambda m: (m["date"], 0 if m["slot"] == "lunch" else 1))
+        return {
+            "summary": str(data.get("summary") or "").strip(),
+            "estimated_total": _float_or_none(data.get("estimated_total")),
+            "meals": meals,
+        }
+
+
+PHOTO_PROMPT = """Ces photos montrent une recette : page de livre, magazine, fiche manuscrite ou écran.
+S'il y a plusieurs photos, ce sont les pages successives d'une même recette.
+Recopie la recette fidèlement, sans rien inventer ni « améliorer » : mêmes quantités, mêmes étapes, même titre.
+Déchiffre l'écriture manuscrite avec soin ; si un mot reste illisible, écris [illisible].
+Si une information manque (temps, portions), mets null. Si plusieurs recettes figurent sur la page, prends la principale.
+Si ce n'est pas une recette, renvoie {"recipes": []}.
+
+Réponds avec ce JSON (une seule recette) :
+""" + RECIPE_SCHEMA
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return round(float(value), 2) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _int_or_none(value: Any) -> int | None:

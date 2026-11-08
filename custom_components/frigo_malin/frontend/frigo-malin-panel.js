@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.1.0";
+const FM_VERSION = "1.2.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -192,6 +192,39 @@ function aisleOf(text) {
   return "autres";
 }
 
+/* Réglages du foyer (mêmes clés que household.py). */
+const HH = {
+  ages: { adult: ["Adulte", "🧑"], teen: ["Ado", "🧑‍🎓"], child: ["Enfant", "🧒"], toddler: ["Tout-petit", "👶"] },
+  diets: {
+    omnivore: "Mange de tout", flexitarian: "Flexitarien", vegetarian: "Végétarien", vegan: "Vegan",
+    pescetarian: "Pescétarien", no_pork: "Sans porc", halal: "Halal",
+  },
+  allergens: {
+    gluten: "Gluten", milk: "Lait / lactose", eggs: "Œufs", peanuts: "Arachides", nuts: "Fruits à coque",
+    fish: "Poisson", crustaceans: "Crustacés", molluscs: "Mollusques", soy: "Soja", sesame: "Sésame",
+    celery: "Céleri", mustard: "Moutarde", sulphites: "Sulfites", lupin: "Lupin",
+  },
+  spice: { mild: "Doux 🙂", medium: "Un peu 🌶️", hot: "Relevé 🔥" },
+  equipment: {
+    oven: "Four", microwave: "Micro-ondes", airfryer: "Airfryer", multicooker: "Robot cuiseur",
+    pressure_cooker: "Autocuiseur", slow_cooker: "Mijoteuse", bbq: "Barbecue / plancha", steamer: "Cuiseur vapeur",
+  },
+  cuisines: {
+    french: "🇫🇷 Française", italian: "🇮🇹 Italienne", asian: "🥢 Asiatique", mediterranean: "🫒 Méditerranéenne",
+    mexican: "🌮 Mexicaine", indian: "🍛 Indienne", middle_eastern: "🧆 Orientale", comfort: "🫕 Réconfortante",
+  },
+  goals: {
+    balanced: "⚖️ Équilibré", light: "🥗 Léger", protein: "💪 Protéiné", budget: "💶 Petit budget",
+    quick: "⚡ Rapide", seasonal: "🍂 De saison", zero_waste: "♻️ Anti-gaspi",
+  },
+};
+const DAY_SHORT = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+const PLAN_LOADING = [
+  "J'épluche le calendrier…", "Je fais le tour des produits de saison…", "Je vérifie les allergies du foyer…",
+  "J'organise les restes pour ne rien jeter…", "Je compte les euros…", "Je dresse la table…",
+];
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
 const DEFAULT_QUICK = ["Lait", "Pain", "Œufs", "Beurre", "Bananes", "Pommes", "Yaourts", "Café", "Fromage râpé", "Papier toilette"];
 
 async function resizeImage(file, maxSide = 1568, quality = 0.85) {
@@ -293,6 +326,48 @@ nav.tabs .pill { position: relative; }
 }
 .toolbar .icon-btn.cart { position: relative; }
 .toolbar .icon-btn.cart .badge { top: 4px; right: 2px; }
+
+/* Réglages, planification, photo */
+.set-sec { margin: 22px 0 8px; display: flex; align-items: center; gap: 10px; }
+.set-sec h3 { margin: 0; flex: 1; }
+.member { display: flex; align-items: center; gap: 12px; padding: 10px 12px; width: 100%; text-align: left; margin-bottom: 8px;
+  background: var(--fm-card); border: 1px solid var(--fm-divider); border-radius: var(--fm-radius); }
+.member .av { font-size: 28px; width: 40px; text-align: center; }
+.member .m { font-size: 13px; color: var(--fm-text2); }
+.switch { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.switch .grow { font-size: 15px; }
+.switch .sub { font-size: 12px; color: var(--fm-text2); }
+.toggle { width: 48px; height: 28px; border-radius: 14px; border: 0; background: var(--fm-divider); position: relative; flex-shrink: 0; padding: 0; }
+.toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.toggle.on { background: var(--fm-primary); }
+.toggle.on::after { left: 23px; }
+select.input { appearance: auto; }
+.aisle-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--fm-divider); }
+.aisle-row:first-child { border-top: 0; }
+.aisle-row .n { width: 22px; color: var(--fm-text2); font-size: 13px; text-align: center; }
+.aisle-row .icon-btn { width: 36px; height: 36px; }
+.plan-day { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--fm-divider); }
+.plan-day:first-child { border-top: 0; }
+.plan-day .d { width: 76px; font-weight: 500; }
+.plan-day .chip { min-height: 36px; }
+.plan-day .chip.taken { opacity: .5; text-decoration: line-through; }
+.pmeal { display: flex; gap: 12px; align-items: flex-start; }
+.pmeal .thumb { width: 52px; height: 52px; font-size: 26px; }
+.pmeal .when { font-size: 12px; color: var(--fm-text2); text-transform: uppercase; letter-spacing: .04em; }
+.pmeal .t { font-weight: 500; font-size: 16px; margin: 2px 0; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.badges .tag.alt { background: color-mix(in srgb, var(--fm-success) 15%, transparent); color: var(--fm-success); }
+.badges .tag.gold { background: color-mix(in srgb, var(--fm-warning) 18%, transparent); color: color-mix(in srgb, var(--fm-warning) 80%, var(--fm-text)); }
+.meal .note { flex-basis: 100%; font-size: 12px; color: var(--fm-success); padding: 0 8px 4px 0; }
+.pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin: 12px 0; }
+.pages .pg { position: relative; aspect-ratio: 3 / 4; border-radius: 10px; overflow: hidden; border: 1px solid var(--fm-divider); }
+.pages .pg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pages .pg .icon-btn { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; background: rgba(0,0,0,.55); color: #fff; }
+.pages .pg .num { position: absolute; left: 6px; bottom: 6px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+.hh-hint { font-size: 13px; color: var(--fm-text2); display: flex; align-items: center; gap: 6px; margin: 4px 0 12px; }
+.hh-hint ha-icon { --mdc-icon-size: 18px; color: var(--fm-success); }
+.store-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 4px; }
+.store-pick .lbl { font-size: 13px; color: var(--fm-text2); display: inline-flex; align-items: center; gap: 4px; }
 
 /* Courses */
 .quickbox .row { margin-bottom: 10px; }
@@ -596,12 +671,23 @@ class FrigoMalinPanel extends HTMLElement {
 
   connectedCallback() {
     if (this._hass && !this.shadowRoot.firstChild) this._render();
-    if (this._hass && this.s.config) this._subscribeList();
+    if (this._hass && this.s.config) {
+      this._subscribeList();
+      if (!this._onLocation) {
+        this._onLocation = () => setTimeout(() => this._applyRoute(), 0);
+        window.addEventListener("location-changed", this._onLocation);
+      }
+      this._applyRoute();
+    }
   }
 
   disconnectedCallback() {
     this._releaseWakeLock();
     this._unsubscribeList();
+    if (this._onLocation) {
+      window.removeEventListener("location-changed", this._onLocation);
+      this._onLocation = null;
+    }
   }
 
   async _init() {
@@ -615,9 +701,61 @@ class FrigoMalinPanel extends HTMLElement {
       this._toast(this._err(err), true);
     }
     this.s.loaded = true;
+    try {
+      this.s.list.storeId = localStorage.getItem("frigo-malin-store") || null;
+    } catch (_) {
+      /* stockage local indisponible */
+    }
     this._render();
     this._subscribeList();
     this._loadSuggestions();
+    this._applyRoute();
+    if (!this._onLocation) {
+      this._onLocation = () => setTimeout(() => this._applyRoute(), 0);
+      window.addEventListener("location-changed", this._onLocation);
+    }
+  }
+
+  /* Liens directs : /frigo-malin?tab=shopping&store=…, ?recipe=…&cook=1 (notifications, carte du tableau de bord). */
+  _applyRoute() {
+    if (!this.s.loaded || !this.isConnected) return;
+    const params = new URLSearchParams(window.location.search);
+    if (![...params.keys()].length) return;
+    const s = this.s;
+    const tab = params.get("tab");
+    if (["fridge", "recipes", "week", "shopping"].includes(tab)) {
+      s.stack = [];
+      s.tab = tab;
+      if (tab === "week") this._loadWeek();
+      if (tab === "shopping") this._loadMenuInfo();
+    }
+    const store = params.get("store");
+    if (store && (this.settings.stores || []).some((x) => x.id === store)) this._pickStore(store);
+    const recipe = this._recipe(params.get("recipe"));
+    if (recipe) {
+      const servings = Number(params.get("servings")) || recipe.servings || 4;
+      s.stack = [{ type: "recipe", id: recipe.id, servings, confirmDelete: false }];
+      if (params.get("cook") === "1") {
+        s.stack.push({ type: "cook", id: recipe.id, servings, step: 0, showIng: false });
+        this._requestWakeLock();
+      }
+    }
+    history.replaceState(history.state, "", window.location.pathname);
+    this._render();
+  }
+
+  get settings() {
+    return (this.s.config && this.s.config.settings) || { members: [], stores: [], plan_slots: {} };
+  }
+
+  _pickStore(id) {
+    this.s.list.storeId = id || null;
+    try {
+      if (id) localStorage.setItem("frigo-malin-store", id);
+      else localStorage.removeItem("frigo-malin-store");
+    } catch (_) {
+      /* stockage local indisponible */
+    }
   }
 
   /* ---------------- liste de courses de Home Assistant, en direct */
@@ -771,6 +909,20 @@ class FrigoMalinPanel extends HTMLElement {
   async _onChange(ev) {
     const el = ev.target;
     const kind = el.dataset && el.dataset.change;
+    if (kind === "book-photo" && el.files && el.files.length) {
+      const files = [...el.files];
+      el.value = "";
+      for (const file of files) {
+        if (this.top.pages.length >= 4) break;
+        try {
+          this.top.pages.push(await resizeImage(file, 2000, 0.85));
+        } catch (_) {
+          this._toast("Impossible de lire cette image", true);
+        }
+      }
+      this._renderOverlay();
+      return;
+    }
     if (kind === "photo" && el.files && el.files[0]) {
       const file = el.files[0];
       el.value = "";
@@ -904,6 +1056,128 @@ class FrigoMalinPanel extends HTMLElement {
           .then(() => this._toast("Panier vidé"))
           .catch((err) => this._toast(this._err(err), true));
         return;
+      /* Réglages du foyer */
+      case "settings-open":
+        s.stack.push({ type: "settings", draft: clone(this.settings) });
+        this._renderOverlay();
+        return;
+      case "settings-save":
+        this._saveSettings();
+        return;
+      case "toggle-in": {
+        const list = this._getPath(d.path) || [];
+        const i = list.indexOf(d.value);
+        if (i >= 0) list.splice(i, 1);
+        else list.push(d.value);
+        this._setPath(d.path, list);
+        this._renderOverlay();
+        return;
+      }
+      case "toggle-bool":
+        this._setPath(d.path, !this._getPath(d.path));
+        if (d.path.startsWith("top")) this._renderOverlay();
+        else this._render();
+        return;
+      case "member-add":
+        s.stack.push({ type: "member", index: -1, draft: { name: "", age: "adult", diet: "omnivore", allergies: [], dislikes: "", spice: "medium" } });
+        this._renderOverlay();
+        this.shadowRoot.getElementById("member-name")?.focus();
+        return;
+      case "member-edit":
+        s.stack.push({ type: "member", index: Number(d.i), draft: clone(this.top.draft.members[Number(d.i)]) });
+        this._renderOverlay();
+        return;
+      case "member-save": {
+        const top = s.stack.pop();
+        const members = this.top.draft.members;
+        if (!String(top.draft.name).trim()) top.draft.name = HH.ages[top.draft.age][0];
+        if (top.index >= 0) members[top.index] = top.draft;
+        else members.push(top.draft);
+        this._renderOverlay();
+        return;
+      }
+      case "member-delete": {
+        const top = s.stack.pop();
+        if (top.index >= 0) this.top.draft.members.splice(top.index, 1);
+        this._renderOverlay();
+        return;
+      }
+      case "store-add":
+        s.stack.push({ type: "store", index: -1, draft: { name: "", zone: "", aisles: AISLES.map((a) => a.key) } });
+        this._renderOverlay();
+        this.shadowRoot.getElementById("store-name")?.focus();
+        return;
+      case "store-edit":
+        s.stack.push({ type: "store", index: Number(d.i), draft: clone(this.top.draft.stores[Number(d.i)]) });
+        this._renderOverlay();
+        return;
+      case "store-save": {
+        const top = s.stack.pop();
+        const stores = this.top.draft.stores;
+        if (!String(top.draft.name).trim()) top.draft.name = "Mon magasin";
+        if (top.index >= 0) stores[top.index] = top.draft;
+        else stores.push(top.draft);
+        this._renderOverlay();
+        return;
+      }
+      case "store-delete": {
+        const top = s.stack.pop();
+        if (top.index >= 0) this.top.draft.stores.splice(top.index, 1);
+        this._renderOverlay();
+        return;
+      }
+      case "aisle-move": {
+        const list = this.top.draft.aisles;
+        const i = Number(d.i);
+        const j = i + Number(d.delta);
+        if (j < 0 || j >= list.length) return;
+        [list[i], list[j]] = [list[j], list[i]];
+        this._renderOverlay();
+        return;
+      }
+      case "store-pick":
+        this._pickStore(d.id);
+        this._renderListParts();
+        return;
+
+      /* Photo d'une page de livre */
+      case "book-open":
+        s.stack.push({ type: "book", pages: [], loading: false, error: null });
+        this._renderOverlay();
+        return;
+      case "book-remove":
+        this.top.pages.splice(Number(d.i), 1);
+        this._renderOverlay();
+        return;
+      case "book-read":
+        this._readBook();
+        return;
+
+      /* Planifier la semaine */
+      case "weekplan-open":
+        this._openWeekPlan();
+        return;
+      case "weekplan-slot": {
+        const key = `${d.date}|${d.slot}`;
+        this.top.slots[key] = !this.top.slots[key];
+        this._renderOverlay();
+        return;
+      }
+      case "weekplan-generate":
+        this._generateWeek();
+        return;
+      case "weekplan-remove":
+        this.top.proposal.meals.splice(Number(d.i), 1);
+        this._renderOverlay();
+        return;
+      case "weekplan-back":
+        this.top.step = "form";
+        this._renderOverlay();
+        return;
+      case "weekplan-apply":
+        this._applyWeek();
+        return;
+
       case "go-shopping":
         s.stack = [];
         s.tab = "shopping";
@@ -1062,6 +1336,149 @@ class FrigoMalinPanel extends HTMLElement {
         return;
       }
       default:
+    }
+  }
+
+  _getPath(path) {
+    const keys = path.split(".");
+    let obj = keys[0] === "top" ? this.top : this.s;
+    if (keys[0] === "top") keys.shift();
+    for (const k of keys) obj = obj == null ? undefined : obj[k];
+    return obj;
+  }
+
+  async _saveSettings() {
+    const top = this.top;
+    try {
+      const res = await this._ws("settings/save", { settings: top.draft });
+      this.s.config.settings = res.settings;
+      this.s.config.default_servings = res.default_servings;
+      this.s.fridge.servings = res.default_servings;
+      if (this.s.list.storeId && !res.settings.stores.some((x) => x.id === this.s.list.storeId)) this._pickStore(null);
+      this.s.stack.pop();
+      this._toast("Réglages enregistrés");
+      this._render();
+    } catch (err) {
+      this._toast(this._err(err), true);
+    }
+  }
+
+  async _readBook() {
+    const top = this.top;
+    if (!top.pages.length) return;
+    top.loading = true;
+    top.error = null;
+    this._renderOverlay();
+    try {
+      const res = await this._ws("recipes/from_photo", {
+        images: top.pages.map((p) => ({ image: p.split(",")[1], mime: "image/jpeg" })),
+      });
+      this.s.stack.pop();
+      this.s.stack.push({ type: "editor", draft: this._toDraft(res.recipe), imported: "photo" });
+    } catch (err) {
+      top.loading = false;
+      top.error = this._err(err);
+    }
+    this._renderOverlay();
+  }
+
+  async _openWeekPlan() {
+    const settings = this.settings;
+    const today = todayIso();
+    // Si la semaine affichée est déjà bien entamée (à partir de vendredi), on propose la suivante.
+    let start = this.s.week.start;
+    if (addDays(start, 4) < today) start = addDays(start, 7);
+    let entries = this.s.week.entries;
+    if (start !== this.s.week.start) {
+      try {
+        entries = (await this._ws("plan/list", { start, end: addDays(start, 6) })).entries;
+      } catch (_) {
+        entries = [];
+      }
+    }
+    const taken = new Set(entries.map((e) => `${e.date}|${e.slot}`));
+    const slots = {};
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(start, i);
+      const weekend = i >= 5;
+      for (const slot of ["lunch", "dinner"]) {
+        const key = `${date}|${slot}`;
+        const wanted = settings.plan_slots[`${slot}_${weekend ? "weekend" : "weekday"}`];
+        slots[key] = Boolean(wanted) && date >= today && !taken.has(key);
+      }
+    }
+    this.s.stack.push({
+      type: "weekplan",
+      step: "form",
+      start,
+      slots,
+      taken: [...taken],
+      useCarnet: this.s.recipes.length > 0,
+      leftovers: true,
+      budget: settings.budget_week || "",
+      servings: this.s.config.default_servings || 4,
+      notes: "",
+      proposal: null,
+      error: null,
+    });
+    this._renderOverlay();
+  }
+
+  async _generateWeek() {
+    const top = this.top;
+    const slots = Object.entries(top.slots)
+      .filter(([, on]) => on)
+      .map(([key]) => {
+        const [date, slot] = key.split("|");
+        return { date, slot };
+      });
+    if (!slots.length) {
+      this._toast("Choisissez au moins un repas à planifier", true);
+      return;
+    }
+    top.step = "loading";
+    top.error = null;
+    top.loadingMsg = 0;
+    this._renderOverlay();
+    const timer = setInterval(() => {
+      if (top.step !== "loading") return clearInterval(timer);
+      top.loadingMsg = (top.loadingMsg + 1) % PLAN_LOADING.length;
+      if (this.top === top) this._renderOverlay();
+    }, 3500);
+    try {
+      const payload = { slots, use_carnet: top.useCarnet, leftovers: top.leftovers, notes: top.notes || "", servings: Number(top.servings) || 4 };
+      if (top.budget !== "" && Number(top.budget) > 0) payload.budget = Number(top.budget);
+      top.proposal = await this._ws("plan/generate", payload);
+      top.step = "preview";
+    } catch (err) {
+      top.step = "form";
+      top.error = this._err(err);
+    }
+    clearInterval(timer);
+    this._renderOverlay();
+  }
+
+  async _applyWeek() {
+    const top = this.top;
+    if (!top.proposal || !top.proposal.meals.length) return;
+    top.step = "applying";
+    this._renderOverlay();
+    try {
+      const res = await this._ws("plan/apply", { meals: top.proposal.meals, servings: Number(top.servings) || 4 });
+      const list = await this._ws("recipes/list");
+      this.s.recipes = list.recipes;
+      this.s.stack.pop();
+      this.s.week.start = top.start;
+      this.s.tab = "week";
+      await this._loadWeek();
+      let msg = `${res.entries.length} repas ajoutés au menu`;
+      if (res.added && res.added.length) msg += ` · ${res.added.length} ingrédients dans « ${res.list_name} »`;
+      this._toast(msg);
+      if (res.shopping_error) setTimeout(() => this._toast(res.shopping_error, true), 4200);
+    } catch (err) {
+      top.step = "preview";
+      this._renderOverlay();
+      this._toast(this._err(err), true);
     }
   }
 
@@ -1477,6 +1894,7 @@ class FrigoMalinPanel extends HTMLElement {
       ${LOGO_SVG}
       <div class="title" style="margin-left:10px">Frigo Malin</div>
       ${this.listEntity ? `<button class="icon-btn cart" data-action="quick-open" aria-label="Ajout rapide à la liste de courses" title="Ajout rapide">${icon("cart-plus")}</button>` : ""}
+      ${this.s.config ? `<button class="icon-btn" data-action="settings-open" aria-label="Réglages du foyer" title="Réglages du foyer">${icon("cog-outline")}</button>` : ""}
     </div>`;
   }
 
@@ -1626,6 +2044,7 @@ class FrigoMalinPanel extends HTMLElement {
           <span class="muted small row">${icon("lightbulb-on-outline")} Nombre d'idées</span>
           ${this._tplStepper("fridge.count", f.count, "", 1, 6)}
         </div>
+        ${this.settings.members.length ? `<p class="hh-hint">${icon("check-circle")} Adapté à votre foyer : ${this.settings.members.length} personne${this.settings.members.length > 1 ? "s" : ""}${this._allergySummary()}.</p>` : ""}
         <label class="field" style="margin-bottom:0">
           <span>${icon("heart-outline")} Envies ou contraintes (facultatif)</span>
           <input class="input" placeholder="Végétarien, sans gluten, moins de 30 min…" value="${esc(f.notes)}" data-model="fridge.notes">
@@ -1712,7 +2131,17 @@ class FrigoMalinPanel extends HTMLElement {
     } else {
       const groups = {};
       for (const item of pending) (groups[aisleOf(item.summary)] = groups[aisleOf(item.summary)] || []).push(item);
-      for (const aisle of AISLES) {
+      const stores = this.settings.stores || [];
+      const store = stores.find((x) => x.id === l.storeId);
+      const byKey = Object.fromEntries(AISLES.map((a) => [a.key, a]));
+      const order = store ? store.aisles.map((k) => byKey[k]).filter(Boolean) : AISLES;
+      html += `<div class="store-pick">
+        <span class="lbl">${icon("store-outline")} Rayons :</span>
+        <button class="chip ${store ? "" : "on"}" data-action="store-pick" data-id="">Standard</button>
+        ${stores.map((x) => `<button class="chip ${store && store.id === x.id ? "on" : ""}" data-action="store-pick" data-id="${esc(x.id)}">🏪 ${esc(x.name)}</button>`).join("")}
+        <button class="chip add" data-action="settings-open">${icon(stores.length ? "cog-outline" : "store-plus-outline")}${stores.length ? "" : " Mon magasin"}</button>
+      </div>`;
+      for (const aisle of order) {
         const items = groups[aisle.key];
         if (!items) continue;
         html += `<div class="card aisle">
@@ -1743,6 +2172,238 @@ class FrigoMalinPanel extends HTMLElement {
       <div id="shop-list">${this._tplShopList()}</div>`;
   }
 
+  /* ---------------- réglages du foyer */
+
+  _tplSwitch(path, on, label, sub = "") {
+    return `<div class="switch"><div class="grow">${label}${sub ? `<div class="sub">${sub}</div>` : ""}</div>
+      <button class="toggle ${on ? "on" : ""}" data-action="toggle-bool" data-path="${path}" role="switch" aria-checked="${on}" aria-label="${esc(label)}"></button></div>`;
+  }
+
+  _tplMulti(path, values, options) {
+    return `<div class="chips">${Object.entries(options)
+      .map(([key, label]) => `<button class="chip ${values.includes(key) ? "on" : ""}" data-action="toggle-in" data-path="${path}" data-value="${key}">${values.includes(key) ? icon("check") : ""}${esc(label)}</button>`)
+      .join("")}</div>`;
+  }
+
+  _memberSummary(m) {
+    const parts = [HH.ages[m.age][0], HH.diets[m.diet]];
+    if (m.allergies.length) parts.push("⚠️ " + m.allergies.map((a) => HH.allergens[a]).join(", "));
+    return parts.join(" · ");
+  }
+
+  _tplSettings(top) {
+    const d = top.draft;
+    const portions = d.members.reduce((t, m) => t + ({ adult: 1, teen: 1, child: 0.5, toddler: 0.25 })[m.age], 0);
+    const zones = Object.keys(this._hass.states).filter((id) => id.startsWith("zone."));
+    const zoneName = (id) => (this._hass.states[id] ? this._hass.states[id].attributes.friendly_name || id : id);
+    const body = `
+      <p class="muted" style="margin-top:0">Ces informations guident toutes les propositions de l'IA : idées du frigo et menus de la semaine.</p>
+
+      <div class="set-sec">${bubble("account-group-outline", COLORS.blue)}<h3>Le foyer</h3></div>
+      ${d.members
+        .map((m, i) => `<button class="member" data-action="member-edit" data-i="${i}">
+          <span class="av">${HH.ages[m.age][1]}</span>
+          <div class="grow"><div>${esc(m.name)}</div><div class="m">${esc(this._memberSummary(m))}</div></div>
+          ${icon("chevron-right")}
+        </button>`)
+        .join("")}
+      <button class="btn tonal block" data-action="member-add">${icon("account-plus-outline")} Ajouter une personne</button>
+      ${d.members.length ? `<p class="hh-hint">${icon("silverware-fork-knife")} Portions calculées : ${fmtNumber(portions)} → ${Math.max(1, Math.ceil(portions - 0.01))} par repas (un enfant compte pour ½).</p>` : ""}
+
+      <div class="set-sec">${bubble("timer-outline", COLORS.orange)}<h3>Temps et budget</h3></div>
+      <div class="row wrap" style="justify-content:space-between;margin-bottom:12px">
+        <span class="muted small">En semaine (prépa + cuisson)</span>${this._tplStepper("top.draft.time_weekday", d.time_weekday, "min", 10, 240, 5)}
+      </div>
+      <div class="row wrap" style="justify-content:space-between;margin-bottom:12px">
+        <span class="muted small">Le week-end</span>${this._tplStepper("top.draft.time_weekend", d.time_weekend, "min", 10, 360, 15)}
+      </div>
+      <label class="field"><span>${icon("cash")} Budget courses par semaine (facultatif)</span>
+        <input class="input" type="number" min="0" inputmode="numeric" placeholder="Ex. : 80 €" value="${esc(d.budget_week ?? "")}" data-model="top.draft.budget_week"></label>
+      <div class="field"><span>Repas à planifier par défaut</span>
+        ${this._tplSwitch("top.draft.plan_slots.lunch_weekday", d.plan_slots.lunch_weekday, "☀️ Midi en semaine")}
+        ${this._tplSwitch("top.draft.plan_slots.dinner_weekday", d.plan_slots.dinner_weekday, "🌙 Soir en semaine")}
+        ${this._tplSwitch("top.draft.plan_slots.lunch_weekend", d.plan_slots.lunch_weekend, "☀️ Midi le week-end")}
+        ${this._tplSwitch("top.draft.plan_slots.dinner_weekend", d.plan_slots.dinner_weekend, "🌙 Soir le week-end")}
+      </div>
+
+      <div class="set-sec">${bubble("chef-hat", COLORS.red)}<h3>Cuisine</h3></div>
+      <div class="field"><span>Équipement</span>${this._tplMulti("top.draft.equipment", d.equipment, HH.equipment)}</div>
+      <div class="field"><span>Cuisines préférées</span>${this._tplMulti("top.draft.cuisines", d.cuisines, HH.cuisines)}</div>
+      <div class="field"><span>Objectifs</span>${this._tplMulti("top.draft.goals", d.goals, HH.goals)}</div>
+      <label class="field"><span>Autres consignes pour l'IA</span>
+        <textarea class="input" rows="3" placeholder="Ex. : pas de coriandre, poisson le vendredi, plats qui se réchauffent pour le midi…" data-model="top.draft.notes">${esc(d.notes)}</textarea></label>
+
+      <div class="set-sec">${bubble("store-outline", COLORS.teal)}<h3>Magasins</h3></div>
+      <p class="muted small" style="margin-top:0">Rangez les rayons dans l'ordre de votre magasin. Reliez-le à une zone de Home Assistant pour recevoir la liste sur votre téléphone en arrivant.</p>
+      ${d.stores
+        .map((st, i) => `<button class="member" data-action="store-edit" data-i="${i}">
+          <span class="av">🏪</span>
+          <div class="grow"><div>${esc(st.name)}</div><div class="m">${st.zone ? `📍 ${esc(zoneName(st.zone))}` : "Pas de zone : pas de rappel"}</div></div>
+          ${icon("chevron-right")}
+        </button>`)
+        .join("")}
+      <button class="btn tonal block" data-action="store-add">${icon("store-plus-outline")} Ajouter un magasin</button>
+      ${this._tplSwitch("top.draft.store_reminder", d.store_reminder, "🔔 Rappel en arrivant au magasin", zones.length ? "Notification sur le téléphone de la personne qui arrive, si la liste n'est pas vide." : "Créez d'abord une zone pour votre magasin dans Paramètres → Zones.")}`;
+    const footer = `<button class="btn grow big" data-action="settings-save">${icon("content-save-outline")} Enregistrer</button>`;
+    return this._tplSheet("Réglages du foyer", body, footer);
+  }
+
+  _tplMember(top) {
+    const m = top.draft;
+    const body = `
+      <label class="field"><span>Prénom</span><input class="input" id="member-name" value="${esc(m.name)}" data-model="top.draft.name" placeholder="Ex. : Léa"></label>
+      <div class="field"><span>Âge</span><div class="chips">${Object.entries(HH.ages)
+        .map(([k, [label, emoji]]) => `<button class="chip ${m.age === k ? "on" : ""}" data-action="set" data-path="top.draft.age" data-value="${k}">${emoji} ${label}</button>`)
+        .join("")}</div></div>
+      <div class="field"><span>Régime</span><div class="chips">${Object.entries(HH.diets)
+        .map(([k, label]) => `<button class="chip ${m.diet === k ? "on" : ""}" data-action="set" data-path="top.draft.diet" data-value="${k}">${esc(label)}</button>`)
+        .join("")}</div></div>
+      <div class="field"><span>⚠️ Allergies et intolérances</span>${this._tplMulti("top.draft.allergies", m.allergies, HH.allergens)}</div>
+      <div class="field"><span>Épices</span><div class="segmented">${Object.entries(HH.spice)
+        .map(([k, label]) => `<button class="${m.spice === k ? "on" : ""}" data-action="set" data-path="top.draft.spice" data-value="${k}">${label}</button>`)
+        .join("")}</div></div>
+      <label class="field"><span>N'aime pas</span><input class="input" value="${esc(m.dislikes)}" data-model="top.draft.dislikes" placeholder="Ex. : épinards, champignons"></label>
+      ${top.index >= 0 ? `<button class="btn danger block" data-action="member-delete">${icon("account-remove-outline")} Retirer du foyer</button>` : ""}`;
+    const footer = `<button class="btn grow big" data-action="member-save">${icon("check")} Valider</button>`;
+    return this._tplSheet(top.index >= 0 ? m.name || "Personne" : "Nouvelle personne", body, footer);
+  }
+
+  _tplStore(top) {
+    const st = top.draft;
+    const zones = Object.keys(this._hass.states).filter((id) => id.startsWith("zone.") && id !== "zone.home");
+    const byKey = Object.fromEntries(AISLES.map((a) => [a.key, a]));
+    const body = `
+      <label class="field"><span>Nom</span><input class="input" id="store-name" value="${esc(st.name)}" data-model="top.draft.name" placeholder="Ex. : Leclerc Saint-Jean"></label>
+      <label class="field"><span>📍 Zone Home Assistant (pour le rappel)</span>
+        <select class="input" data-model="top.draft.zone">
+          <option value="">Aucune</option>
+          ${zones.map((id) => `<option value="${esc(id)}" ${st.zone === id ? "selected" : ""}>${esc(this._hass.states[id].attributes.friendly_name || id)}</option>`).join("")}
+        </select></label>
+      ${zones.length ? "" : `<p class="muted small" style="margin-top:-6px">Aucune zone trouvée : créez-en une autour du magasin dans Paramètres → Zones.</p>`}
+      <div class="field"><span>Ordre des rayons dans ce magasin</span>
+        <div class="card" style="padding:4px 12px">
+          ${st.aisles
+            .map((key, i) => `<div class="aisle-row">
+              <span class="n">${i + 1}</span><span style="font-size:20px">${byKey[key].emoji}</span><span class="grow">${byKey[key].label}</span>
+              <button class="icon-btn" data-action="aisle-move" data-i="${i}" data-delta="-1" aria-label="Monter" ${i === 0 ? "disabled" : ""}>${icon("arrow-up")}</button>
+              <button class="icon-btn" data-action="aisle-move" data-i="${i}" data-delta="1" aria-label="Descendre" ${i === st.aisles.length - 1 ? "disabled" : ""}>${icon("arrow-down")}</button>
+            </div>`)
+            .join("")}
+        </div>
+      </div>
+      ${top.index >= 0 ? `<button class="btn danger block" data-action="store-delete">${icon("delete-outline")} Supprimer ce magasin</button>` : ""}`;
+    const footer = `<button class="btn grow big" data-action="store-save">${icon("check")} Valider</button>`;
+    return this._tplSheet(top.index >= 0 ? st.name || "Magasin" : "Nouveau magasin", body, footer);
+  }
+
+  /* ---------------- photo d'une page de livre */
+
+  _tplBook(top) {
+    const full = top.pages.length >= 4;
+    const body = `
+      <input class="hidden-input" id="book-cam" type="file" accept="image/*" capture="environment" data-change="book-photo">
+      <input class="hidden-input" id="book-gallery" type="file" accept="image/*" multiple data-change="book-photo">
+      <div class="hero" style="padding:8px 0 4px;text-align:center">
+        <div class="emoji" style="font-size:56px">📖</div>
+        <p class="muted" style="margin:8px auto 0;max-width:440px">Photographiez une page de livre, de magazine ou la fiche de mamie, bien à plat et à la lumière. Une recette sur plusieurs pages ? Ajoutez-les toutes (4 maximum).</p>
+      </div>
+      ${top.error ? `<div class="alert">${esc(top.error)}</div>` : ""}
+      ${top.pages.length
+        ? `<div class="pages">${top.pages
+            .map((p, i) => `<div class="pg"><img src="${esc(p)}" alt="Page ${i + 1}"><span class="num">Page ${i + 1}</span>
+              ${top.loading ? "" : `<button class="icon-btn" data-action="book-remove" data-i="${i}" aria-label="Retirer">${icon("close")}</button>`}</div>`)
+            .join("")}</div>`
+        : ""}
+      ${top.loading
+        ? `<div class="empty" style="padding:16px"><div class="spinner" style="margin:0 auto 12px;color:var(--fm-primary)"></div>Je lis la recette… même l'écriture de mamie 😉</div>`
+        : `<div class="stack">
+            <button class="btn ${top.pages.length ? "tonal" : "big"} block" data-action="pick-photo" data-input="book-cam" ${full ? "disabled" : ""}>${icon("camera")} ${top.pages.length ? "Ajouter une page" : "Prendre la photo"}</button>
+            <button class="btn text block" data-action="pick-photo" data-input="book-gallery" ${full ? "disabled" : ""}>${icon("image-multiple-outline")} Choisir dans la galerie</button>
+          </div>`}`;
+    const footer = top.pages.length
+      ? `<button class="btn grow big" data-action="book-read" ${top.loading ? "disabled" : ""}>${icon("text-recognition")} Lire la recette${top.pages.length > 1 ? ` (${top.pages.length} pages)` : ""}</button>`
+      : "";
+    return this._tplSheet("Recette en photo", body, footer);
+  }
+
+  /* ---------------- planifier la semaine */
+
+  _tplWeekPlan(top) {
+    if (top.step === "loading" || top.step === "applying") {
+      const msg = top.step === "applying" ? "J'ajoute tout au menu et à la liste de courses…" : PLAN_LOADING[top.loadingMsg || 0];
+      return this._tplSheet("Planifier ma semaine", `<div class="card hero">
+        <div class="emoji" style="font-size:56px">✨</div>
+        <div class="spinner" style="margin:16px auto;color:var(--fm-primary)"></div>
+        <h2>${esc(msg)}</h2>
+        <p class="muted">Un menu complet prend environ une à deux minutes.</p>
+      </div>`);
+    }
+    if (top.step === "preview") return this._tplWeekPreview(top);
+
+    const today = todayIso();
+    const taken = new Set(top.taken);
+    const count = Object.values(top.slots).filter(Boolean).length;
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(top.start, i);
+      const past = date < today;
+      const chip = (slot) => {
+        const key = `${date}|${slot}`;
+        if (taken.has(key)) return `<span class="chip taken">${slot === "lunch" ? "☀️ Midi" : "🌙 Soir"}</span>`;
+        return `<button class="chip ${top.slots[key] ? "on" : ""}" data-action="weekplan-slot" data-date="${date}" data-slot="${slot}" ${past ? "disabled" : ""}>${slot === "lunch" ? "☀️ Midi" : "🌙 Soir"}</button>`;
+      };
+      days.push(`<div class="plan-day"><span class="d">${DAY_SHORT[i]} ${parseIso(date).getDate()}</span>${chip("lunch")}${chip("dinner")}</div>`);
+    }
+    const hh = this.settings.members.length;
+    const body = `
+      <p class="muted" style="margin-top:0">Semaine du ${esc(fmtDay(top.start, { day: "numeric", month: "long" }))}. Choisissez les repas à préparer : l'IA compose un menu équilibré, de saison, adapté à votre foyer et à votre temps.</p>
+      ${top.error ? `<div class="alert">${esc(top.error)}</div>` : ""}
+      <div class="card" style="padding:6px 14px">${days.join("")}</div>
+      <div class="row wrap" style="justify-content:space-between;margin:14px 0">
+        <span class="muted small row">${icon("account-group-outline")} Personnes</span>${this._tplStepper("top.servings", top.servings, "pers.")}
+      </div>
+      <label class="field"><span>${icon("cash")} Budget pour ces repas (facultatif)</span>
+        <input class="input" type="number" min="0" inputmode="numeric" placeholder="Ex. : 60 €" value="${esc(top.budget)}" data-model="top.budget"></label>
+      ${this._tplSwitch("top.leftovers", top.leftovers, "♻️ Cuisine des restes", "Un plat cuisiné en double se transforme en un autre repas : moins de courses, rien ne se perd.")}
+      ${this._tplSwitch("top.useCarnet", top.useCarnet, "📖 Reprendre des recettes du carnet", "Vos favoris peuvent revenir dans le menu.")}
+      <label class="field" style="margin-top:8px"><span>${icon("heart-outline")} Envies pour cette semaine (facultatif)</span>
+        <input class="input" placeholder="Ex. : du poisson, un plat mexicain, soupe le lundi" value="${esc(top.notes)}" data-model="top.notes"></label>
+      ${hh ? `<p class="hh-hint">${icon("check-circle")} Profil du foyer pris en compte (${hh} personne${hh > 1 ? "s" : ""}).</p>` : `<p class="hh-hint" style="color:var(--fm-text2)">Astuce : décrivez votre foyer dans les réglages ⚙️ (allergies, enfants, régimes) pour des menus sur mesure.</p>`}`;
+    const footer = `<button class="btn grow big" data-action="weekplan-generate" ${count ? "" : "disabled"}>${icon("creation")} Proposer ${count} repas</button>`;
+    return this._tplSheet("Planifier ma semaine", body, footer);
+  }
+
+  _tplWeekPreview(top) {
+    const p = top.proposal;
+    const total = p.meals.reduce((t, m) => t + (m.estimated_cost || 0), 0);
+    const over = p.budget && total > p.budget;
+    const label = (m) => `${cap(fmtDay(m.date, { weekday: "long", day: "numeric" }))} · ${m.slot === "lunch" ? "midi" : "soir"}`;
+    const body = `
+      ${p.summary ? `<div class="info">✨ ${esc(p.summary)}</div>` : ""}
+      ${total ? `<p class="row small ${over ? "warn" : "muted"}" style="margin:0 0 12px">${icon("cash")} Coût estimé : <b>${fmtNumber(total)} €</b>${p.budget ? ` pour un budget de ${p.budget} €` : ""}</p>` : ""}
+      ${p.meals
+        .map((m, i) => `<div class="card pmeal">
+          <div class="thumb" style="background:hsl(${hashHue(m.title)} 60% 50% / .15)">${emojiFor(m.title)}</div>
+          <div class="grow">
+            <div class="when">${esc(label(m))}</div>
+            <div class="t">${esc(m.title)}</div>
+            <div class="badges">
+              ${m.time ? `<span class="tag">⏱️ ${fmtMinutes(m.time)}</span>` : ""}
+              ${m.estimated_cost ? `<span class="tag gold">${fmtNumber(m.estimated_cost)} €</span>` : ""}
+              ${m.recipe_id ? `<span class="tag">📖 Du carnet</span>` : ""}
+              ${m.leftovers_from ? `<span class="tag alt">♻️ Restes</span>` : ""}
+            </div>
+            ${m.note ? `<div class="muted small" style="margin-top:6px">${esc(m.note)}</div>` : ""}
+          </div>
+          <button class="icon-btn" data-action="weekplan-remove" data-i="${i}" aria-label="Retirer ce repas">${icon("close")}</button>
+        </div>`)
+        .join("")}
+      <button class="btn text block" data-action="weekplan-back">${icon("tune-variant")} Changer les réglages et recommencer</button>`;
+    const footer = `<button class="btn tonal" data-action="weekplan-generate">${icon("refresh")}</button>
+      <button class="btn grow big" data-action="weekplan-apply" ${p.meals.length ? "" : "disabled"}>${icon("calendar-check")} Ajouter ${p.meals.length} repas au menu</button>`;
+    return this._tplSheet("Votre menu", body, footer);
+  }
+
   _tplQuickSheet() {
     const body = `
       <p class="muted small row" id="quick-count" style="margin-top:0">${this._tplQuickCount()}</p>
@@ -1755,11 +2416,16 @@ class FrigoMalinPanel extends HTMLElement {
     return this._tplSheet("Ajout rapide", body, footer);
   }
 
-  _tplStepper(path, value, suffix = "", min = 1, max = 30) {
+  _allergySummary() {
+    const all = [...new Set(this.settings.members.flatMap((m) => m.allergies))];
+    return all.length ? `, sans ${all.map((a) => HH.allergens[a].toLowerCase()).join(", ")}` : "";
+  }
+
+  _tplStepper(path, value, suffix = "", min = 1, max = 30, stepBy = 1) {
     return `<div class="stepper">
-      <button data-action="step" data-path="${path}" data-delta="-1" data-min="${min}" data-max="${max}" aria-label="Moins">${icon("minus")}</button>
+      <button data-action="step" data-path="${path}" data-delta="-${stepBy}" data-min="${min}" data-max="${max}" aria-label="Moins">${icon("minus")}</button>
       <span class="val">${esc(value)}${suffix ? " " + suffix : ""}</span>
-      <button data-action="step" data-path="${path}" data-delta="1" data-min="${min}" data-max="${max}" aria-label="Plus">${icon("plus")}</button>
+      <button data-action="step" data-path="${path}" data-delta="${stepBy}" data-min="${min}" data-max="${max}" aria-label="Plus">${icon("plus")}</button>
     </div>`;
   }
 
@@ -1806,7 +2472,8 @@ class FrigoMalinPanel extends HTMLElement {
     return `
       <div class="row" style="margin-bottom:12px">
         <button class="btn grow" data-action="new-recipe">${icon("plus")} Nouvelle</button>
-        <button class="btn tonal grow" data-action="import-open">${icon("link-variant")} Importer un lien</button>
+        <button class="btn tonal grow" data-action="import-open">${icon("link-variant")} Lien</button>
+        <button class="btn tonal grow" data-action="book-open">${icon("book-open-variant")} Photo</button>
       </div>
       <div class="search">
         ${icon("magnify")}
@@ -1871,6 +2538,7 @@ class FrigoMalinPanel extends HTMLElement {
         <button class="icon-btn" data-action="week-shift" data-delta="1" aria-label="Semaine suivante">${icon("chevron-right")}</button>
       </div>
       ${isCurrent ? "" : `<div style="text-align:center;margin:-6px 0 10px"><button class="btn text" data-action="week-today">${icon("calendar-today")} Revenir à cette semaine</button></div>`}
+      <button class="btn tonal block" style="margin-bottom:12px" data-action="weekplan-open">${icon("creation")} Planifier ma semaine avec l'IA</button>
       ${days.join("")}
       <button class="btn big block" data-action="shop-preview" ${w.entries.length ? "" : "disabled"}>${icon("cart-outline")} Liste de courses de la semaine${pending ? ` (${pending} repas)` : ""}</button>`;
   }
@@ -1885,6 +2553,7 @@ class FrigoMalinPanel extends HTMLElement {
             const r = this._recipe(e.recipe_id);
             return `<div class="meal">
               <button class="name" data-action="meal-open" data-id="${esc(e.id)}">${r ? emojiFor(r.title) + " " : ""}${esc(r ? r.title : "Recette supprimée")}</button>
+              ${e.note ? `<div class="note">${/reste/i.test(e.note) ? "♻️" : "📝"} ${esc(e.note)}</div>` : ""}
               <div class="ctrls">
                 ${e.in_shopping_list ? `<span class="pers incart">${icon("cart-check")} Dans la liste</span>` : ""}
                 <button class="icon-btn" data-action="meal-servings" data-id="${esc(e.id)}" data-delta="-1" aria-label="Une portion de moins">${icon("minus")}</button>
@@ -1931,6 +2600,16 @@ class FrigoMalinPanel extends HTMLElement {
         return this._tplShoppingSheet(top);
       case "quick":
         return this._tplQuickSheet();
+      case "settings":
+        return this._tplSettings(top);
+      case "member":
+        return this._tplMember(top);
+      case "store":
+        return this._tplStore(top);
+      case "book":
+        return this._tplBook(top);
+      case "weekplan":
+        return this._tplWeekPlan(top);
       default:
         return "";
     }
@@ -2034,7 +2713,7 @@ class FrigoMalinPanel extends HTMLElement {
   _tplEditor(top) {
     const d = top.draft;
     const body = `
-      ${top.imported ? `<div class="info">Recette importée. Vérifiez-la, puis enregistrez.</div>` : ""}
+      ${top.imported === "photo" ? `<div class="info">📖 Recette lue sur la photo. Relisez-la (surtout les quantités), puis enregistrez.</div>` : top.imported ? `<div class="info">Recette importée. Vérifiez-la, puis enregistrez.</div>` : ""}
       <label class="field"><span>Nom de la recette *</span><input class="input" value="${esc(d.title)}" data-model="top.draft.title" placeholder="Gratin dauphinois"></label>
       <label class="field"><span>Description</span><input class="input" value="${esc(d.description)}" data-model="top.draft.description"></label>
       <div class="row">

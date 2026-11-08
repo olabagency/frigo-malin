@@ -9,6 +9,7 @@ from pathlib import Path
 from homeassistant.components import frontend, panel_custom, persistent_notification
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -26,13 +27,16 @@ from .const import (
     STATIC_URL,
     VERSION,
 )
+from .reminder import StoreReminder
 from .store import FrigoStore
-from .websocket_api import async_register_websocket_api
+from .websocket_api import _shopping_entity, async_register_websocket_api
 
 _LOGGER = logging.getLogger(__name__)
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 UPDATE_NOTIFICATION_ID = f"{DOMAIN}_update"
+PLATFORMS = [Platform.SENSOR]
+CARD_URL = f"{STATIC_URL}/frigo-malin-card.js?v={VERSION}"
 
 
 @dataclass
@@ -82,6 +86,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: FrigoConfigEntry) -> boo
         config={},
     )
 
+    # Carte de tableau de bord « Ce soir on mange… », proposée dans le sélecteur de cartes.
+    frontend.add_extra_js_url(hass, CARD_URL)
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    reminder = StoreReminder(hass, entry.runtime_data, lambda: _shopping_entity(hass, entry.runtime_data))
+    entry.async_on_unload(reminder.async_start())
+
     _announce_update(hass, store)
 
     entry.async_on_unload(entry.add_update_listener(_async_reload))
@@ -123,6 +135,9 @@ async def _async_reload(hass: HomeAssistant, entry: FrigoConfigEntry) -> None:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: FrigoConfigEntry) -> bool:
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
     frontend.async_remove_panel(hass, PANEL_URL_PATH)
+    frontend.remove_extra_js_url(hass, CARD_URL)
     hass.data.pop(DOMAIN, None)
     return True
