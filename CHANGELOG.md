@@ -7,6 +7,12 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.2.1] – 2026-11-08
+
+### Corrigé
+
+- Dans les fenêtres (réglages, personne, magasin…), chaque choix faisait clignoter l'écran et apparaître l'onglet Frigo une fraction de seconde. L'animation ne joue plus qu'à l'ouverture d'une nouvelle fenêtre.
+
 ## [1.2.0] – 2026-11-08
 
 ### Ajouté

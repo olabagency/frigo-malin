@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.2.0";
+const FM_VERSION = "1.2.1";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -549,6 +549,7 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
   position: absolute; inset: 0; z-index: 10; background: var(--fm-bg); display: flex; flex-direction: column;
   animation: up .2s ease-out;
 }
+#overlay.same .sheet { animation: none; }
 @keyframes up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 .sheet .toolbar { background: var(--fm-card); color: var(--fm-text); border-bottom: 1px solid var(--fm-divider); }
 .sheet .body { flex: 1; overflow-y: auto; }
@@ -1200,7 +1201,8 @@ class FrigoMalinPanel extends HTMLElement {
           return;
         }
         this._setPath(d.path, d.value);
-        this._render();
+        if (d.path.startsWith("top.")) this._renderOverlay();
+        else this._render();
         return;
       case "step":
         this._step(d.path, Number(d.delta), Number(d.min || 1), Number(d.max || 30));
@@ -1862,8 +1864,13 @@ class FrigoMalinPanel extends HTMLElement {
     const prevBody = host.querySelector(".body");
     const prevKey = host.dataset.key;
     const scroll = prevBody ? prevBody.scrollTop : 0;
-    host.innerHTML = top ? this._tplOverlay(top) : "";
     const key = top ? `${this.s.stack.length}:${top.type}` : "";
+    // Même fenêtre redessinée : pas d'animation d'ouverture (sinon elle clignote et laisse voir l'onglet dessous).
+    // L'animation ne joue qu'à l'ouverture d'une nouvelle fenêtre, pas au retour en arrière.
+    const prevDepth = Number(host.dataset.depth || 0);
+    host.classList.toggle("same", this.s.stack.length <= prevDepth);
+    host.dataset.depth = String(this.s.stack.length);
+    host.innerHTML = top ? this._tplOverlay(top) : "";
     host.dataset.key = key;
     const body = host.querySelector(".body");
     if (body && key === prevKey) body.scrollTop = scroll;
