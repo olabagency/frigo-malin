@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import DEFAULT_SERVINGS, SLOTS, STORAGE_KEY, STORAGE_VERSION
+from .const import DEFAULT_SERVINGS, SLOTS, STORAGE_KEY, STORAGE_MINOR_VERSION, STORAGE_VERSION
 from .parsing import normalize_ingredient
 
 
@@ -28,21 +28,48 @@ def _str_list(value: Any) -> list[str]:
     return [str(v).strip() for v in value or [] if str(v).strip()]
 
 
+class _MigratingStore(Store[dict[str, Any]]):
+    """Met à jour les données enregistrées par une ancienne version de Frigo Malin."""
+
+    async def _async_migrate_func(
+        self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        data = dict(old_data)
+        # Exemple pour une future version :
+        # if old_major_version == 1 and old_minor_version < 2:
+        #     for recipe in data.get("recipes", []):
+        #         recipe.setdefault("nouveau_champ", valeur_par_defaut)
+        if old_major_version > STORAGE_VERSION:
+            raise NotImplementedError("Données créées par une version plus récente de Frigo Malin")
+        return data
+
+
 class FrigoStore:
     """Données persistantes dans .storage/frigo_malin.data."""
 
     def __init__(self, hass: HomeAssistant) -> None:
-        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self._store = _MigratingStore(hass, STORAGE_VERSION, STORAGE_KEY, minor_version=STORAGE_MINOR_VERSION)
         self.recipes: dict[str, dict[str, Any]] = {}
         self.plan: dict[str, dict[str, Any]] = {}
+        # Dernière version de l'intégration qui a ouvert ces données (pour annoncer les mises à jour).
+        self.last_version: str | None = None
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
         self.recipes = {r["id"]: r for r in data.get("recipes", [])}
         self.plan = {e["id"]: e for e in data.get("plan", [])}
+        self.last_version = data.get("last_version")
+
+    def set_last_version(self, version: str) -> None:
+        self.last_version = version
+        self._save()
 
     def _data(self) -> dict[str, Any]:
-        return {"recipes": list(self.recipes.values()), "plan": list(self.plan.values())}
+        return {
+            "last_version": self.last_version,
+            "recipes": list(self.recipes.values()),
+            "plan": list(self.plan.values()),
+        }
 
     def _save(self) -> None:
         self._store.async_delay_save(self._data, 1)

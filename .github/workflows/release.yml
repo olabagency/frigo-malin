@@ -1,5 +1,8 @@
 name: Release
 
+# Publier une release GitHub nommée v1.2.3 déclenche ce workflow.
+# HACS lit les releases et propose alors la mise à jour dans Home Assistant.
+
 on:
   release:
     types: [published]
@@ -12,18 +15,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Mettre la version du tag dans le manifest
+
+      - name: Vérifier que le tag correspond à la version du code
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          python3 - "$VERSION" <<'PY'
-          import json, sys
-          path = "custom_components/frigo_malin/manifest.json"
-          data = json.load(open(path))
-          data["version"] = sys.argv[1]
-          json.dump(data, open(path, "w"), indent=2)
-          PY
-      - name: Créer l'archive
-        run: cd custom_components/frigo_malin && zip -r ../../frigo_malin.zip .
+          TAG="${GITHUB_REF_NAME#v}"
+          python3 scripts/check_version.py "$TAG"
+
+      - name: Créer l'archive pour HACS
+        run: cd custom_components/frigo_malin && zip -r ../../frigo_malin.zip . -x "__pycache__/*"
+
       - uses: softprops/action-gh-release@v2
         with:
           files: frigo_malin.zip

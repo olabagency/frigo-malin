@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "frigo_malin"
+# Version de l'intégration. Ne pas modifier à la main : utiliser scripts/bump_version.py.
 VERSION = "1.0.0"
 
 # Fournisseurs d'IA
@@ -36,9 +37,13 @@ PANEL_ICON = "mdi:fridge-outline"
 PANEL_COMPONENT = "frigo-malin-panel"
 STATIC_URL = "/frigo_malin_static"
 
-# Stockage
+# Stockage : augmenter STORAGE_MINOR_VERSION pour un ajout de champ compatible,
+# STORAGE_VERSION pour un changement de structure, et prévoir la migration dans store.py.
 STORAGE_KEY = f"{DOMAIN}.data"
 STORAGE_VERSION = 1
+STORAGE_MINOR_VERSION = 1
+
+CHANGELOG_URL = "https://github.com/olabagency/frigo-malin/blob/main/CHANGELOG.md"
 
 # Créneaux du menu de la semaine
 SLOTS = ["lunch", "dinner"]

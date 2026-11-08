@@ -62,6 +62,7 @@ class FrigoMalinConfigFlow(ConfigFlow, domain=DOMAIN):
     """Étapes : choix du fournisseur, puis clé API."""
 
     VERSION = 1
+    MINOR_VERSION = 1
 
     def __init__(self) -> None:
         self._provider: str | None = None

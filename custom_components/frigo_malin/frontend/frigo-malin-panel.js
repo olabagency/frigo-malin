@@ -92,7 +92,70 @@ function hashHue(text) {
 }
 
 const EMOJIS = ["🍲", "🥗", "🍝", "🥘", "🍛", "🥧", "🍜", "🥙", "🍳", "🍰"];
-const emojiFor = (title) => EMOJIS[hashHue(title) % EMOJIS.length];
+
+/* Logo de l'app : un frigo malin qui sourit (même dessin que l'icône de l'intégration). */
+const LOGO_SVG = `<svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="#22b8a7"/>
+  <path d="M8 18c4-7 11-11 18-12" stroke="#7fe3d6" stroke-width="3" fill="none" stroke-linecap="round" opacity=".7"/>
+  <rect x="17" y="11" width="30" height="45" rx="8" fill="#fff"/>
+  <path d="M17 27h30" stroke="#22b8a7" stroke-width="2.6"/>
+  <rect x="21" y="15" width="2.8" height="8" rx="1.4" fill="#22b8a7"/>
+  <rect x="21" y="31" width="2.8" height="11" rx="1.4" fill="#22b8a7"/>
+  <circle cx="31" cy="40" r="2.3" fill="#1d3557"/>
+  <circle cx="40" cy="40" r="2.3" fill="#1d3557"/>
+  <circle cx="28.5" cy="45" r="1.9" fill="#ff8fa3" opacity=".8"/>
+  <circle cx="42.5" cy="45" r="1.9" fill="#ff8fa3" opacity=".8"/>
+  <path d="M31.5 46.5q4 3.6 8 0" stroke="#1d3557" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <path d="M42 12c1-4 4-6 8-6-1 4-3 6-8 6z" fill="#7ed957"/>
+  <path d="M44 13c3-2 6-2 9 0-3 2-6 2-9 0z" fill="#4caf50"/>
+  <path d="M40 9l2 6 3-1z" fill="#ff8c1a"/>
+  <path d="M51 22l1.4 3 3 1.4-3 1.4-1.4 3-1.4-3-3-1.4 3-1.4z" fill="#ffd166"/>
+</svg>`;
+
+/* Emoji associé à un ingrédient ou à un plat, pour donner un peu de couleur. */
+const FOOD_EMOJIS = [
+  [/tomate/, "🍅"], [/oeuf/, "🥚"], [/carotte/, "🥕"], [/pomme(s)? de terre|patate/, "🥔"], [/oignon|echalote/, "🧅"],
+  [/\bail\b|gousse/, "🧄"], [/champignon|cepe|girolle/, "🍄"], [/courgette|concombre|cornichon/, "🥒"],
+  [/poivron/, "🫑"], [/piment/, "🌶️"], [/aubergine/, "🍆"], [/brocoli|chou/, "🥦"], [/laitue|salade|epinard|roquette|mache|poireau|blette/, "🥬"],
+  [/mais\b/, "🌽"], [/avocat/, "🥑"], [/citron|lime/, "🍋"], [/orange|clementine|mandarine/, "🍊"], [/banane/, "🍌"],
+  [/fraise/, "🍓"], [/framboise|myrtille|cerise|fruits rouges/, "🍒"], [/raisin/, "🍇"], [/peche|abricot|nectarine/, "🍑"],
+  [/poire/, "🍐"], [/pomme/, "🍎"], [/ananas/, "🍍"], [/mangue/, "🥭"], [/kiwi/, "🥝"], [/noix de coco|coco/, "🥥"],
+  [/fromage blanc|lait|creme|yaourt|yogourt/, "🥛"],
+  [/fromage|emmental|gruyere|comte|mozzarella|parmesan|chevre|feta|camembert|raclette|ricotta|mascarpone/, "🧀"],
+  [/beurre/, "🧈"], [/jambon|lardon|bacon|chorizo|saucisson/, "🥓"],
+  [/poulet|dinde|volaille|canard/, "🍗"], [/boeuf|steak|veau|agneau|porc|viande|hache/, "🥩"], [/saucisse|merguez/, "🌭"],
+  [/crevette|gambas/, "🦐"], [/saumon|thon|cabillaud|poisson|truite|sardine|maquereau|colin/, "🐟"], [/moule|huitre|coquillage/, "🦪"],
+  [/pain|baguette|brioche/, "🥖"], [/riz|risotto/, "🍚"], [/pate|spaghetti|tagliatelle|penne|lasagne|nouille|coquillette/, "🍝"],
+  [/farine|semoule|ble|avoine|quinoa|boulgour/, "🌾"], [/sucre|miel|sirop/, "🍯"], [/chocolat|cacao/, "🍫"],
+  [/huile|olive/, "🫒"], [/persil|basilic|coriandre|menthe|ciboulette|thym|romarin|herbe|aneth|estragon|laurier/, "🌿"],
+  [/\bsel\b|poivre|epice|cumin|curry|paprika|cannelle|muscade/, "🧂"], [/\bvin\b|biere/, "🍷"], [/\beau\b|bouillon/, "💧"],
+  [/haricot|lentille|pois|feve/, "🫘"], [/noix|noisette|amande|cacahuete|pistache/, "🥜"], [/gingembre/, "🫚"],
+  [/pizza/, "🍕"], [/burger/, "🍔"], [/soupe|veloute|potage/, "🍲"], [/tajine|couscous/, "🍛"],
+  [/gateau|cake|fondant|moelleux|cheesecake/, "🍰"], [/tarte|quiche|tourte/, "🥧"], [/crepe|pancake|gaufre/, "🥞"],
+  [/omelette/, "🍳"], [/gratin|cocotte|mijote|ragout|bourguignon|blanquette|hachis/, "🥘"], [/wrap|burrito/, "🌯"],
+  [/taco/, "🌮"], [/sushi|maki/, "🍣"], [/cookie|biscuit|sable/, "🍪"], [/glace|sorbet/, "🍨"], [/sandwich|croque/, "🥪"],
+];
+/* Mots qui désignent un plat : prioritaires sur les ingrédients pour l'image d'une recette. */
+const DISH_FIRST = /pizza|burger|soupe|veloute|potage|tajine|couscous|gateau|cake|fondant|moelleux|tarte|quiche|tourte|crepe|pancake|gaufre|omelette|gratin|cocotte|ragout|bourguignon|blanquette|hachis|wrap|burrito|taco|sushi|cookie|glace|sorbet|sandwich|croque|salade|risotto|curry/;
+
+const foldText = (text) =>
+  String(text || "").toLowerCase().replace(/œ/g, "oe").replace(/æ/g, "ae").normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+function foodEmoji(text) {
+  const t = foldText(text);
+  for (const [re, emoji] of FOOD_EMOJIS) if (re.test(t)) return emoji;
+  return "";
+}
+
+function dishEmoji(title) {
+  const t = foldText(title);
+  const dish = t.match(DISH_FIRST);
+  if (dish) return { salade: "🥗", curry: "🍛", risotto: "🍚" }[dish[0]] || foodEmoji(dish[0]);
+  return foodEmoji(t);
+}
+
+const emojiFor = (title) => dishEmoji(title) || EMOJIS[hashHue(title) % EMOJIS.length];
+const ingEmoji = (name) => foodEmoji(name) || "🥄";
 
 async function resizeImage(file, maxSide = 1568, quality = 0.85) {
   const url = URL.createObjectURL(file);
@@ -115,6 +178,12 @@ async function resizeImage(file, maxSide = 1568, quality = 0.85) {
 }
 
 const icon = (name) => `<ha-icon icon="mdi:${name}"></ha-icon>`;
+/* Icône dans une pastille colorée, pour les titres de section. */
+const bubble = (name, color) => `<span class="bubble" style="--c:${color}">${icon(name)}</span>`;
+const COLORS = {
+  green: "#43a047", orange: "#fb8c00", purple: "#8e24aa", blue: "#1e88e5", teal: "#22b8a7",
+  pink: "#e91e63", amber: "#f9a825", indigo: "#5c6bc0", red: "#e53935",
+};
 
 /* ------------------------------------------------------------------ styles */
 
@@ -237,9 +306,35 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .chip.on { background: var(--fm-soft); border-color: transparent; color: var(--fm-primary); font-weight: 500; }
 .tag { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 12px; background: var(--fm-soft); color: var(--fm-primary); }
 
-/* Frigo */
+.logo { width: 34px; height: 34px; flex-shrink: 0; display: block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.15)); }
+.bubble {
+  display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--c);
+}
+.bubble ha-icon { --mdc-icon-size: 19px; }
+.sec { display: flex; align-items: center; gap: 10px; margin: 22px 0 10px; }
+.sec h3 { margin: 0; flex: 1; }
+.ico { color: var(--c, currentColor); display: inline-flex; }
+.ing-emoji { width: 28px; text-align: center; font-size: 20px; flex-shrink: 0; }
+.field > span ha-icon, .muted.row ha-icon { --mdc-icon-size: 18px; vertical-align: -4px; }
+.version { text-align: center; font-size: 12px; color: var(--fm-text2); margin-top: 18px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.version ha-icon { --mdc-icon-size: 16px; }
+.update {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 12px; border-radius: var(--fm-radius); flex-wrap: wrap;
+  background: color-mix(in srgb, #22b8a7 14%, var(--fm-card)); border: 1px solid color-mix(in srgb, #22b8a7 40%, transparent);
+}
+.update .grow { font-size: 14px; min-width: 160px; }
+.update b { display: block; }
+.toast { display: flex; align-items: center; gap: 10px; }
+.toast ha-icon { --mdc-icon-size: 20px; flex-shrink: 0; }
+@keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
+
+/* Écran Frigo */
 .hero { text-align: center; padding: 28px 20px; }
 .hero .emoji { font-size: 64px; line-height: 1; }
+.hero .logo { width: 96px; height: 96px; margin: 0 auto; animation: wiggle 2.4s ease-in-out .4s 2; }
+.hero .perks { display: flex; justify-content: center; gap: 12px; margin: -4px 0 20px; flex-wrap: wrap; }
+.hero .perks > span { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--fm-text2); width: 84px; }
 .hero h2 { margin-top: 12px; }
 .hero p { margin: 8px auto 20px; max-width: 420px; }
 .hidden-input { display: none; }
@@ -294,7 +389,8 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .day .dname .now { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--fm-primary); color: var(--fm-on-primary); }
 .slot { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; }
 .slot + .slot { border-top: 1px dashed var(--fm-divider); }
-.slot .sl { width: 40px; flex-shrink: 0; font-size: 12px; color: var(--fm-text2); padding-top: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.slot .sl { width: 44px; flex-shrink: 0; font-size: 11px; color: var(--fm-text2); padding-top: 4px; text-transform: uppercase; letter-spacing: .04em; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.slot .sl ha-icon { --mdc-icon-size: 20px; }
 .slot .meals { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .meal { display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; background: var(--fm-soft); border-radius: 10px; padding: 2px 2px 2px 12px; }
 .meal .name { flex: 1 1 100%; min-width: 0; border: 0; background: none; text-align: left; padding: 8px 8px 0 0; font-weight: 500; line-height: 1.3; }
@@ -547,6 +643,9 @@ class FrigoMalinPanel extends HTMLElement {
     switch (action) {
       case "menu":
         this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }));
+        return;
+      case "reload":
+        window.location.reload();
         return;
       case "tab":
         s.tab = d.tab;
@@ -1119,7 +1218,9 @@ class FrigoMalinPanel extends HTMLElement {
     const host = this.shadowRoot.getElementById("toast");
     if (!host) return;
     const t = this.s.toast;
-    host.innerHTML = t ? `<div class="toast ${t.error ? "error" : ""}" role="status">${esc(t.message)}</div>` : "";
+    host.innerHTML = t
+      ? `<div class="toast ${t.error ? "error" : ""}" role="status">${icon(t.error ? "alert-circle-outline" : "check-circle-outline")}<span>${esc(t.message)}</span></div>`
+      : "";
   }
 
   _renderRecipeList() {
@@ -1135,26 +1236,46 @@ class FrigoMalinPanel extends HTMLElement {
   _tplHeader() {
     return `<div class="toolbar">
       ${this._narrow ? `<button class="icon-btn" data-action="menu" aria-label="Menu">${icon("menu")}</button>` : `<span style="width:12px"></span>`}
-      <div class="title">Frigo Malin</div>
+      ${LOGO_SVG}
+      <div class="title" style="margin-left:10px">Frigo Malin</div>
     </div>`;
   }
 
   _tplNav() {
     const tabs = [
-      ["fridge", "fridge-outline", "Frigo"],
-      ["recipes", "book-open-page-variant-outline", "Recettes"],
-      ["week", "calendar-week", "Semaine"],
+      ["fridge", "fridge-outline", "fridge", "Frigo"],
+      ["recipes", "book-open-page-variant-outline", "book-open-page-variant", "Recettes"],
+      ["week", "calendar-week-outline", "calendar-week", "Semaine"],
     ];
     return `<div class="inner">${tabs
       .map(
-        ([key, ic, label]) =>
-          `<button class="${this.s.tab === key ? "active" : ""}" data-action="tab" data-tab="${key}" aria-label="${label}"><span class="pill">${icon(ic)}</span>${label}</button>`
+        ([key, ic, icActive, label]) =>
+          `<button class="${this.s.tab === key ? "active" : ""}" data-action="tab" data-tab="${key}" aria-label="${label}"><span class="pill">${icon(this.s.tab === key ? icActive : ic)}</span>${label}</button>`
       )
       .join("")}</div>`;
   }
 
+  _tplVersion() {
+    return `<div class="version">${icon("tag-outline")} Frigo Malin v${esc(FM_VERSION)}</div>`;
+  }
+
+  /* Le serveur a été mis à jour mais le navigateur garde l'ancien panneau en cache. */
+  _tplUpdateBanner() {
+    const server = this.s.config && this.s.config.version;
+    if (!server || server === FM_VERSION) return "";
+    return `<div class="update">
+      ${bubble("rocket-launch-outline", COLORS.teal)}
+      <div class="grow"><b>Nouvelle version installée (v${esc(server)})</b>Rechargez pour en profiter.</div>
+      <button class="btn" data-action="reload">${icon("refresh")} Recharger</button>
+    </div>`;
+  }
+
   _tplTab() {
     if (!this.s.loaded) return `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`;
+    return this._tplUpdateBanner() + this._tplTabContent();
+  }
+
+  _tplTabContent() {
     if (this.s.tab === "recipes") return this._tplRecipes();
     if (this.s.tab === "week") return this._tplWeek();
     return this._tplFridge();
@@ -1171,15 +1292,21 @@ class FrigoMalinPanel extends HTMLElement {
     if (f.step === "start") {
       return `${inputs}
         <div class="card hero">
-          <div class="emoji">📸</div>
+          ${LOGO_SVG}
           <h2>Qu'y a-t-il dans votre frigo ?</h2>
           <p class="muted">Prenez une photo : je reconnais les ingrédients, vous corrigez la liste, et je vous propose des recettes.</p>
+          <div class="perks">
+            <span>${bubble("camera-outline", COLORS.teal)}Photo</span>
+            <span>${bubble("format-list-checks", COLORS.blue)}Ingrédients</span>
+            <span>${bubble("chef-hat", COLORS.orange)}Recettes</span>
+          </div>
           <div class="stack">
             <button class="btn big block" data-action="pick-photo" data-input="cam">${icon("camera")} Prendre une photo</button>
             <button class="btn tonal block" data-action="pick-photo" data-input="gallery">${icon("image-outline")} Choisir une image</button>
-            <button class="btn text block" data-action="manual-list">Saisir les ingrédients à la main</button>
+            <button class="btn text block" data-action="manual-list">${icon("pencil-outline")} Saisir les ingrédients à la main</button>
           </div>
-        </div>`;
+        </div>
+        ${this._tplVersion()}`;
     }
 
     if (f.step === "detecting") {
@@ -1192,7 +1319,8 @@ class FrigoMalinPanel extends HTMLElement {
 
     if (f.step === "suggesting") {
       return `<div class="card hero">
-          <div class="spinner" style="margin: 8px auto 16px; color: var(--fm-primary)"></div>
+          <div class="emoji" style="font-size:48px">${f.style === "creative" ? "✨" : "👩‍🍳"}</div>
+          <div class="spinner" style="margin: 12px auto 16px; color: var(--fm-primary)"></div>
           <h2>Je cherche des idées…</h2>
           <p class="muted">${f.style === "creative" ? "Des recettes créatives" : "Des recettes classiques"} avec ${f.ingredients.length} ingrédient${f.ingredients.length > 1 ? "s" : ""}. Ça prend souvent une trentaine de secondes.</p>
         </div>`;
@@ -1202,12 +1330,12 @@ class FrigoMalinPanel extends HTMLElement {
       return `
         <div class="row" style="margin-bottom:12px">
           <button class="icon-btn" data-action="fridge-back" aria-label="Retour">${icon("arrow-left")}</button>
-          <h2 class="grow" style="margin:0">Idées de recettes</h2>
+          <h2 class="grow" style="margin:0">Idées de recettes 💡</h2>
         </div>
         ${f.results.map((r, i) => this._tplResult(r, i)).join("")}
         <div class="stack" style="margin-top:16px">
           <button class="btn tonal block" data-action="suggest">${icon("refresh")} D'autres idées</button>
-          <button class="btn text block" data-action="fridge-reset">Nouvelle photo</button>
+          <button class="btn text block" data-action="fridge-reset">${icon("camera-retake-outline")} Nouvelle photo</button>
         </div>`;
     }
 
@@ -1217,7 +1345,8 @@ class FrigoMalinPanel extends HTMLElement {
       ${f.photo ? `<div class="photo-wrap"><img class="photo" src="${esc(f.photo)}" alt="Photo du frigo"></div>` : ""}
       <div class="card">
         <div class="row" style="margin-bottom:4px">
-          <h3 class="grow" style="margin:0">Ingrédients (${f.ingredients.length})</h3>
+          ${bubble("basket-outline", COLORS.green)}
+          <h3 class="grow" style="margin:0 0 0 6px">Ingrédients (${f.ingredients.length})</h3>
           <button class="icon-btn" data-action="pick-photo" data-input="cam" aria-label="Ajouter une photo" title="Ajouter une photo">${icon("camera-plus-outline")}</button>
         </div>
         <p class="muted small" style="margin:0 0 8px">Corrigez, supprimez ou ajoutez ce qui manque.</p>
@@ -1225,6 +1354,7 @@ class FrigoMalinPanel extends HTMLElement {
           ${f.ingredients
             .map(
               (ing, i) => `<div class="ing-row">
+                <span class="ing-emoji">${ingEmoji(ing.name)}</span>
                 <input value="${esc(ing.name)}" data-model="fridge.ingredients.${i}.name" aria-label="Ingrédient">
                 ${ing.amount ? `<input class="amount" value="${esc(ing.amount)}" data-model="fridge.ingredients.${i}.amount" aria-label="Quantité">` : ""}
                 <button class="icon-btn" data-action="ing-remove" data-i="${i}" aria-label="Retirer">${icon("close")}</button>
@@ -1240,28 +1370,28 @@ class FrigoMalinPanel extends HTMLElement {
 
       <div class="card">
         <div class="field">
-          <span>Style de recettes</span>
+          <span>${icon("palette-outline")} Style de recettes</span>
           <div class="segmented">
-            <button class="${f.style === "classic" ? "on" : ""}" data-action="set" data-path="fridge.style" data-value="classic">Classiques</button>
+            <button class="${f.style === "classic" ? "on" : ""}" data-action="set" data-path="fridge.style" data-value="classic">🍲 Classiques</button>
             <button class="${f.style === "creative" ? "on" : ""}" data-action="set" data-path="fridge.style" data-value="creative">Créatives ✨</button>
           </div>
         </div>
         <div class="row wrap" style="justify-content:space-between; margin-bottom:14px">
-          <span class="muted small">Pour combien de personnes ?</span>
+          <span class="muted small row">${icon("account-group-outline")} Pour combien de personnes ?</span>
           ${this._tplStepper("fridge.servings", f.servings, "pers.")}
         </div>
         <div class="row wrap" style="justify-content:space-between; margin-bottom:14px">
-          <span class="muted small">Nombre d'idées</span>
+          <span class="muted small row">${icon("lightbulb-on-outline")} Nombre d'idées</span>
           ${this._tplStepper("fridge.count", f.count, "", 1, 6)}
         </div>
         <label class="field" style="margin-bottom:0">
-          <span>Envies ou contraintes (facultatif)</span>
+          <span>${icon("heart-outline")} Envies ou contraintes (facultatif)</span>
           <input class="input" placeholder="Végétarien, sans gluten, moins de 30 min…" value="${esc(f.notes)}" data-model="fridge.notes">
         </label>
       </div>
 
       <button class="btn big block" data-action="suggest" ${f.ingredients.length ? "" : "disabled"}>${icon("chef-hat")} Trouver des recettes</button>
-      <button class="btn text block" style="margin-top:8px" data-action="fridge-reset">Tout recommencer</button>`;
+      <button class="btn text block" style="margin-top:8px" data-action="fridge-reset">${icon("restart")} Tout recommencer</button>`;
   }
 
   _tplStepper(path, value, suffix = "", min = 1, max = 30) {
@@ -1283,8 +1413,8 @@ class FrigoMalinPanel extends HTMLElement {
         </div>
       </div>
       <div class="meta" style="margin-bottom:0">
-        ${time ? `<span>${icon("timer-outline")} ${fmtMinutes(time)}</span>` : ""}
-        ${r.servings ? `<span>${icon("account-group-outline")} ${r.servings} pers.</span>` : ""}
+        ${time ? `<span><span class="ico" style="--c:${COLORS.orange}">${icon("timer-outline")}</span> ${fmtMinutes(time)}</span>` : ""}
+        ${r.servings ? `<span><span class="ico" style="--c:${COLORS.blue}">${icon("account-group-outline")}</span> ${r.servings} pers.</span>` : ""}
       </div>
       ${r.uses && r.uses.length ? `<div class="uses"><b class="ok">✓ Utilise :</b> ${esc(r.uses.join(", "))}</div>` : ""}
       ${r.missing && r.missing.length ? `<div class="uses"><b class="warn">+ À acheter :</b> ${esc(r.missing.join(", "))}</div>` : `<div class="uses ok">Rien à acheter 🎉</div>`}
@@ -1314,7 +1444,7 @@ class FrigoMalinPanel extends HTMLElement {
     const f = this.s.filter;
     return `
       <div class="row" style="margin-bottom:12px">
-        <button class="btn grow" data-action="new-recipe">${icon("plus")} Nouvelle recette</button>
+        <button class="btn grow" data-action="new-recipe">${icon("plus")} Nouvelle</button>
         <button class="btn tonal grow" data-action="import-open">${icon("link-variant")} Importer un lien</button>
       </div>
       <div class="search">
@@ -1322,11 +1452,12 @@ class FrigoMalinPanel extends HTMLElement {
         <input class="input" type="search" placeholder="Chercher une recette, un ingrédient…" value="${esc(this.s.search)}" data-model="search" data-live="recipes">
       </div>
       <div class="chips" style="margin-bottom:14px">
-        <button class="chip ${f === "all" ? "on" : ""}" data-action="filter" data-value="all">Toutes</button>
+        <button class="chip ${f === "all" ? "on" : ""}" data-action="filter" data-value="all">${icon("bookshelf")} Toutes</button>
         <button class="chip ${f === "fav" ? "on" : ""}" data-action="filter" data-value="fav">${icon("star")} Favoris</button>
-        ${tags.map((t) => `<button class="chip ${f === "tag:" + t ? "on" : ""}" data-action="filter" data-value="tag:${esc(t)}">${esc(t)}</button>`).join("")}
+        ${tags.map((t) => `<button class="chip ${f === "tag:" + t ? "on" : ""}" data-action="filter" data-value="tag:${esc(t)}">${icon("tag-outline")} ${esc(t)}</button>`).join("")}
       </div>
-      <div id="recipe-list">${this._tplRecipeItems()}</div>`;
+      <div id="recipe-list">${this._tplRecipeItems()}</div>
+      ${this._tplVersion()}`;
   }
 
   _tplThumb(r) {
@@ -1378,7 +1509,7 @@ class FrigoMalinPanel extends HTMLElement {
         <div class="label">${esc(label)}${w.loading ? ` <span class="spinner sm" style="display:inline-block;vertical-align:middle"></span>` : ""}</div>
         <button class="icon-btn" data-action="week-shift" data-delta="1" aria-label="Semaine suivante">${icon("chevron-right")}</button>
       </div>
-      ${isCurrent ? "" : `<div style="text-align:center;margin:-6px 0 10px"><button class="btn text" data-action="week-today">Revenir à cette semaine</button></div>`}
+      ${isCurrent ? "" : `<div style="text-align:center;margin:-6px 0 10px"><button class="btn text" data-action="week-today">${icon("calendar-today")} Revenir à cette semaine</button></div>`}
       ${days.join("")}
       <button class="btn big block" data-action="shop-preview" ${w.entries.length ? "" : "disabled"}>${icon("cart-outline")} Liste de courses de la semaine${pending ? ` (${pending} repas)` : ""}</button>`;
   }
@@ -1386,13 +1517,13 @@ class FrigoMalinPanel extends HTMLElement {
   _tplSlot(date, slot) {
     const meals = this.s.week.entries.filter((e) => e.date === date && e.slot === slot);
     return `<div class="slot">
-      <div class="sl">${SLOT_LABELS[slot]}</div>
+      <div class="sl"><span class="ico" style="--c:${slot === "lunch" ? COLORS.amber : COLORS.indigo}">${icon(slot === "lunch" ? "weather-sunny" : "weather-night")}</span>${SLOT_LABELS[slot]}</div>
       <div class="meals">
         ${meals
           .map((e) => {
             const r = this._recipe(e.recipe_id);
             return `<div class="meal">
-              <button class="name" data-action="meal-open" data-id="${esc(e.id)}">${esc(r ? r.title : "Recette supprimée")}</button>
+              <button class="name" data-action="meal-open" data-id="${esc(e.id)}">${r ? emojiFor(r.title) + " " : ""}${esc(r ? r.title : "Recette supprimée")}</button>
               <div class="ctrls">
                 ${e.in_shopping_list ? `<span class="pers incart">${icon("cart-check")} Dans la liste</span>` : ""}
                 <button class="icon-btn" data-action="meal-servings" data-id="${esc(e.id)}" data-delta="-1" aria-label="Une portion de moins">${icon("minus")}</button>
@@ -1457,30 +1588,31 @@ class FrigoMalinPanel extends HTMLElement {
       <h2>${esc(r.title)}</h2>
       ${r.description ? `<p class="muted" style="margin:6px 0">${esc(r.description)}</p>` : ""}
       <div class="meta">
-        ${r.prep_time ? `<span>${icon("knife")} Préparation ${fmtMinutes(r.prep_time)}</span>` : ""}
-        ${r.cook_time ? `<span>${icon("stove")} Cuisson ${fmtMinutes(r.cook_time)}</span>` : ""}
+        ${r.prep_time ? `<span><span class="ico" style="--c:${COLORS.green}">${icon("knife")}</span> Préparation ${fmtMinutes(r.prep_time)}</span>` : ""}
+        ${r.cook_time ? `<span><span class="ico" style="--c:${COLORS.red}">${icon("stove")}</span> Cuisson ${fmtMinutes(r.cook_time)}</span>` : ""}
       </div>
       ${r.tags && r.tags.length ? `<div class="chips" style="margin-bottom:8px">${r.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
       ${!saved && r.missing && r.missing.length ? `<div class="info"><b>À acheter :</b> ${esc(r.missing.join(", "))}</div>` : ""}
 
-      <div class="row" style="justify-content:space-between; margin-top:16px">
-        <h3 style="margin:0">Ingrédients</h3>
+      <div class="sec">
+        ${bubble("basket-outline", COLORS.green)}
+        <h3>Ingrédients</h3>
         ${this._tplStepper("top.servings", top.servings || base, "pers.")}
       </div>
       <ul class="ings">
         ${r.ingredients
           .map((ing) => {
             const f = fmtIngredient(ing, factor);
-            return `<li><span class="q">${esc(f.amount)}</span><span>${esc(cap(f.name))}</span></li>`;
+            return `<li><span class="ing-emoji">${ingEmoji(ing.name)}</span><span class="q">${esc(f.amount)}</span><span>${esc(cap(f.name))}</span></li>`;
           })
           .join("")}
       </ul>
 
-      <h3>Préparation</h3>
+      <div class="sec">${bubble("chef-hat", COLORS.orange)}<h3>Préparation</h3></div>
       <ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>
 
       ${saved
-        ? `<h3>Mes notes</h3>
+        ? `<div class="sec">${bubble("notebook-edit-outline", COLORS.purple)}<h3>Mes notes</h3></div>
            <textarea class="input" placeholder="Astuces, variantes, avis de la famille…" data-change="notes-save">${esc(r.notes)}</textarea>
            <p class="muted small">Enregistrées automatiquement quand vous quittez le champ.</p>`
         : ""}
@@ -1518,7 +1650,7 @@ class FrigoMalinPanel extends HTMLElement {
         ? `<div class="ingpanel"><ul class="ings">${r.ingredients
             .map((ing) => {
               const f = fmtIngredient(ing, factor);
-              return `<li><span class="q">${esc(f.amount)}</span><span>${esc(cap(f.name))}</span></li>`;
+              return `<li><span class="ing-emoji">${ingEmoji(ing.name)}</span><span class="q">${esc(f.amount)}</span><span>${esc(cap(f.name))}</span></li>`;
             })
             .join("")}</ul></div>`
         : ""}
@@ -1644,13 +1776,14 @@ class FrigoMalinPanel extends HTMLElement {
         ${top.list_name ? "" : `<div class="alert">Aucune liste de courses trouvée. Ajoutez l'intégration « Liste de courses » de Home Assistant ou choisissez une liste dans les options de Frigo Malin.</div>`}
         <div class="row" style="justify-content:space-between">
           <span class="small muted">${count} / ${top.items.length} sélectionnés</span>
-          <button class="btn text" data-action="shop-toggle-all">${top.items.every((i) => i.checked) ? "Tout décocher" : "Tout cocher"}</button>
+          <button class="btn text" data-action="shop-toggle-all">${icon(top.items.every((i) => i.checked) ? "checkbox-multiple-blank-outline" : "checkbox-multiple-marked-outline")} ${top.items.every((i) => i.checked) ? "Tout décocher" : "Tout cocher"}</button>
         </div>
         <div class="card" style="padding:4px 16px">
           ${top.items
             .map(
               (item, i) => `<label class="check">
                 <input type="checkbox" ${item.checked ? "checked" : ""} data-change="shop-check" data-i="${i}">
+                <span class="ing-emoji">${ingEmoji(item.text)}</span>
                 <div class="grow"><div>${esc(item.text)}</div><div class="sub">${esc(item.recipes.join(", "))}</div></div>
               </label>`
             )

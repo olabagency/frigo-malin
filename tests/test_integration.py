@@ -86,12 +86,15 @@ async def test_panel_recipes_plan_and_shopping(hass: HomeAssistant, hass_ws_clie
     patched = await ws("recipes/patch", recipe_id=recipe["id"], favorite=True, notes="Top")
     assert patched["result"]["recipe"]["favorite"] is True
 
+    before = await _todo_items(hass)
+
     # Planifier pour 2 personnes : les quantités sont divisées par deux, le sel est ignoré.
     added = await ws("plan/add", date="2026-11-09", slot="dinner", recipe_id=recipe["id"], servings=2)
     assert added["success"], added
     assert added["result"]["added"] == ["Crème (25 cl)", "Pommes de terre (500 g)"]
     assert added["result"]["entry"]["in_shopping_list"] is True
-    assert sorted(await _todo_items(hass)) == ["Crème (25 cl)", "Pommes de terre (500 g)"]
+    after = await _todo_items(hass)
+    assert sorted(after[len(before) :]) == ["Crème (25 cl)", "Pommes de terre (500 g)"]
 
     listed = await ws("plan/list", start="2026-11-09", end="2026-11-15")
     assert len(listed["result"]["entries"]) == 1
@@ -182,3 +185,30 @@ async def test_fridge_and_import(hass: HomeAssistant, hass_ws_client, aioclient_
 
     bad = await ws("recipes/import", url="ftp://exemple")
     assert not bad["success"]
+
+
+async def test_update_is_announced(hass: HomeAssistant, hass_storage) -> None:
+    """Après une mise à jour, une notification HA annonce la nouvelle version, une seule fois."""
+    from custom_components.frigo_malin.const import STORAGE_KEY, VERSION
+
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": STORAGE_KEY,
+        "data": {"last_version": "0.9.0", "recipes": [{"id": "r1", "title": "Ancienne", "ingredients": [], "steps": []}], "plan": []},
+    }
+    entry = await _setup(hass)
+    notifications = hass.data["persistent_notification"]
+    assert "frigo_malin_update" in notifications
+    assert VERSION in notifications["frigo_malin_update"]["message"]
+    assert entry.runtime_data.store.recipes["r1"]["title"] == "Ancienne"
+
+    await hass.async_block_till_done()
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.store.last_version == VERSION
+
+
+async def test_first_install_is_silent(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    assert "frigo_malin_update" not in hass.data.get("persistent_notification", {})

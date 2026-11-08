@@ -1,3 +1,5 @@
+<p align="center"><img src="custom_components/frigo_malin/brand/icon.png" width="120" alt="Frigo Malin"></p>
+
 # Frigo Malin 🥕
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
@@ -62,6 +64,17 @@ N'importe quelle liste « todo » fonctionne : la liste de courses intégrée, B
 
 Chaque photo analysée et chaque série d'idées font un appel à l'IA, facturé par votre fournisseur sur votre clé. L'import d'une recette depuis une adresse est gratuit quand le site publie sa recette dans un format standard (c'est le cas de Marmiton) ; l'IA n'est appelée qu'en secours.
 
+## Mises à jour
+
+Frigo Malin suit une numérotation `majeure.mineure.correctif` (voir [CHANGELOG.md](CHANGELOG.md)) :
+
+- **HACS** affiche les nouvelles versions dans **Paramètres → Mises à jour**, comme pour le reste de Home Assistant. Installez, puis redémarrez HA.
+- Après le redémarrage, une **notification** dans Home Assistant annonce la nouvelle version, avec un lien vers les nouveautés.
+- Si votre téléphone affiche encore l'ancienne interface (cache de l'app), une bannière **« Nouvelle version installée »** propose de recharger.
+- Vos recettes, votre menu et vos réglages sont conservés : quand le format des données change, Frigo Malin les convertit automatiquement au premier démarrage.
+
+La version installée est affichée en bas des onglets Frigo et Recettes.
+
 ## Où sont mes données ?
 
 Les recettes et le menu sont stockés localement dans `config/.storage/frigo_malin.data` et inclus dans les sauvegardes de Home Assistant. Seules les photos et les listes d'ingrédients partent chez le fournisseur d'IA choisi, au moment où vous le demandez.
@@ -79,6 +92,24 @@ pip install -r requirements_test.txt
 ```bash
 pytest
 ```
+
+### Publier une nouvelle version
+
+1. Montez la version partout d'un coup (manifest, code Python, panneau, CHANGELOG) :
+
+   ```bash
+   python3 scripts/bump_version.py minor
+   ```
+
+   (`patch` pour un correctif, `minor` pour une nouveauté, `major` pour un changement important, ou un numéro précis comme `1.4.0`.)
+2. Complétez la section créée dans `CHANGELOG.md`, committez et poussez sur `main`.
+3. Sur GitHub, publiez une **release** nommée `v1.1.0` (même numéro). Le workflow vérifie que les numéros correspondent et joint l'archive `frigo_malin.zip` que HACS installe.
+
+Si le format des données enregistrées change, augmentez `STORAGE_MINOR_VERSION` (ajout compatible) ou `STORAGE_VERSION` (changement de structure) dans `const.py` et écrivez la conversion dans `store.py`. Pour les réglages de l'intégration, c'est `MINOR_VERSION` / `VERSION` dans `config_flow.py` et `async_migrate_entry` dans `__init__.py`.
+
+### Icône
+
+Les images de l'icône et du logo sont dans `custom_components/frigo_malin/brand/` (`icon.png`, `logo.png`, versions `@2x` et sombres), au format demandé par Home Assistant et par le dépôt [home-assistant/brands](https://github.com/home-assistant/brands).
 
 L'interface est un seul fichier JavaScript sans dépendance ni build : `custom_components/frigo_malin/frontend/frigo-malin-panel.js`.
 

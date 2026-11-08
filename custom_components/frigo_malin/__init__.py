@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 
-from homeassistant.components import frontend, panel_custom
+from homeassistant.components import frontend, panel_custom, persistent_notification
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -13,6 +14,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .ai import AIClient
 from .const import (
+    CHANGELOG_URL,
     CONF_API_KEY,
     CONF_MODEL,
     CONF_PROVIDER,
@@ -27,7 +29,10 @@ from .const import (
 from .store import FrigoStore
 from .websocket_api import async_register_websocket_api
 
+_LOGGER = logging.getLogger(__name__)
+
 FRONTEND_DIR = Path(__file__).parent / "frontend"
+UPDATE_NOTIFICATION_ID = f"{DOMAIN}_update"
 
 
 @dataclass
@@ -77,7 +82,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: FrigoConfigEntry) -> boo
         config={},
     )
 
+    _announce_update(hass, store)
+
     entry.async_on_unload(entry.add_update_listener(_async_reload))
+    return True
+
+
+def _announce_update(hass: HomeAssistant, store: FrigoStore) -> None:
+    """Prévient dans HA quand une nouvelle version vient d'être installée."""
+    previous = store.last_version
+    if previous == VERSION:
+        return
+    if previous is not None:
+        _LOGGER.info("Frigo Malin mis à jour de %s vers %s", previous, VERSION)
+        persistent_notification.async_create(
+            hass,
+            f"Frigo Malin est passé de la version {previous} à la version **{VERSION}**.\n\n"
+            f"[Voir les nouveautés]({CHANGELOG_URL})\n\n"
+            "Si l'écran de Frigo Malin semble inchangé sur votre téléphone, fermez puis rouvrez l'app.",
+            title="Frigo Malin mis à jour",
+            notification_id=UPDATE_NOTIFICATION_ID,
+        )
+    store.set_last_version(VERSION)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: FrigoConfigEntry) -> bool:
+    """Adapte la configuration créée par une ancienne version.
+
+    Pour une future évolution des réglages : augmenter VERSION ou MINOR_VERSION
+    dans config_flow.py et ajouter ici l'étape correspondante.
+    """
+    if entry.version > 1:
+        # Configuration créée par une version plus récente : on ne sait pas la lire.
+        return False
     return True
 
 
