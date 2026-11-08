@@ -318,7 +318,7 @@ async def test_settings_photo_and_sensor(hass: HomeAssistant, hass_ws_client, ai
     state = hass.states.get("sensor.frigo_malin_prochain_repas")
     assert state.state == "Tarte aux pommes de mamie"
     assert state.attributes["label"] == "Demain soir"
-    assert state.attributes["servings"] == 6
+    assert state.attributes["servings"] == 3  # portions du foyer (2 adultes + 1 enfant)
     assert state.attributes["entity_picture"] == "https://img.example/tarte.jpg"
     assert state.attributes["url"].startswith("/frigo-malin?recipe=")
 
@@ -457,3 +457,59 @@ async def test_library_and_ideas(hass: HomeAssistant, hass_ws_client, aioclient_
     assert idea["tags"] == ["Anti-inflammatoire"]
     prompt = aioclient_mock.mock_calls[-1][2]["messages"][0]["content"][-1]["text"]
     assert "anti-inflammatoire" in prompt and "plat" in prompt and "Soupe de lentilles corail" in prompt
+
+
+async def test_builtin_list_and_default_servings(hass: HomeAssistant, hass_ws_client) -> None:
+    """Sans l'intégration « Liste de courses » de HA : Frigo Malin utilise sa propre liste."""
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get("todo.shopping_list") is None
+    assert hass.states.get("todo.frigo_malin_courses") is not None
+
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    config = (await ws("config"))["result"]
+    assert config["shopping_list"] == {"entity_id": "todo.frigo_malin_courses", "name": "Frigo Malin courses", "builtin": True}
+
+    # Portions par défaut choisies à la main : 2.
+    saved = await ws("settings/save", settings={"servings": 2})
+    assert saved["result"]["default_servings"] == 2
+
+    recipe = (await ws("recipes/save", recipe={"title": "Gratin", "servings": 4, "ingredients": ["1 kg de pommes de terre"], "steps": ["Cuire"]}))["result"]["recipe"]
+    added = await ws("plan/add", date="2026-11-12", slot="dinner", recipe_id=recipe["id"])
+    assert added["success"], added
+    assert added["result"]["shopping_error"] is None
+    assert added["result"]["entry"]["servings"] == 2  # sans portions précisées : celles du foyer
+    assert added["result"]["list_name"] == "Frigo Malin courses"
+
+    added2 = await ws("plan/add", date="2026-11-13", slot="dinner", recipe_id=recipe["id"], servings=2)
+    assert added2["result"]["entry"]["servings"] == 2
+
+    result = await hass.services.async_call(
+        "todo", "get_items", target={"entity_id": "todo.frigo_malin_courses"}, blocking=True, return_response=True
+    )
+    items = result["todo.frigo_malin_courses"]["items"]
+    assert [i["summary"] for i in items] == ["Pommes de terre (1 kg)"]
+    assert items[0]["description"] == "Pour : Gratin"
+
+    # Cocher, puis vider le panier, via les services standard de HA.
+    await hass.services.async_call(
+        "todo", "update_item", {"item": items[0]["uid"], "status": "completed"},
+        target={"entity_id": "todo.frigo_malin_courses"}, blocking=True,
+    )
+    assert hass.states.get("todo.frigo_malin_courses").state == "0"
+    await hass.services.async_call(
+        "todo", "remove_completed_items", target={"entity_id": "todo.frigo_malin_courses"}, blocking=True
+    )
+    assert entry.runtime_data.store.shopping_items == []
+
+    # Une liste choisie dans l'app a la priorité.
+    hass.states.async_set("todo.courses_famille", "0", {"friendly_name": "Courses famille"})
+    saved = await ws("settings/save", settings={"servings": 2, "shopping_entity": "todo.courses_famille"})
+    assert saved["result"]["shopping_list"]["entity_id"] == "todo.courses_famille"

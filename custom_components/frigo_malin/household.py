@@ -86,6 +86,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "plan_slots": {"lunch_weekday": False, "dinner_weekday": True, "lunch_weekend": True, "dinner_weekend": True},
     "stores": [],
     "store_reminder": True,
+    # Portions par défaut choisies à la main (None : calculées d'après le foyer).
+    "servings": None,
+    # Liste de courses choisie dans l'app (None : automatique).
+    "shopping_entity": None,
 }
 
 
@@ -151,11 +155,17 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         },
         "stores": [normalize_store(s) for s in raw.get("stores") or [] if isinstance(s, dict)][:10],
         "store_reminder": bool(raw.get("store_reminder", True)),
+        "servings": _int(raw.get("servings"), 1, 20, None) if raw.get("servings") not in (None, "") else None,
+        "shopping_entity": raw.get("shopping_entity")
+        if isinstance(raw.get("shopping_entity"), str) and raw["shopping_entity"].startswith("todo.")
+        else None,
     }
 
 
 def household_servings(settings: dict[str, Any], default: int) -> int:
-    """Nombre de portions pour le foyer : un enfant compte pour une demi-portion, etc."""
+    """Portions par défaut : le réglage choisi, sinon le foyer (un enfant compte pour ½), sinon `default`."""
+    if settings.get("servings"):
+        return int(settings["servings"])
     members = settings.get("members") or []
     if not members:
         return default

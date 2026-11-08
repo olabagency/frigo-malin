@@ -33,6 +33,7 @@ from .const import (
     VERSION,
 )
 from .drive import CONNECTORS
+from .todo import OWN_LIST_ENTITY
 from .importer import RecipeImportError, async_import_recipe
 from .household import household_context, household_servings
 from .library import THEMES, TYPES, load_library
@@ -76,8 +77,24 @@ def _decode_image(image: str) -> str:
 
 
 def _shopping_entity(hass: HomeAssistant, data: FrigoData) -> str | None:
-    entity_id = _options(data).get(CONF_SHOPPING_ENTITY) or DEFAULT_SHOPPING_ENTITY
-    return entity_id if hass.states.get(entity_id) else None
+    """Liste de courses utilisée : celle choisie dans l'app, sinon dans les options,
+    sinon la « Liste de courses » de HA, sinon la liste intégrée à Frigo Malin."""
+    candidates = [
+        data.store.settings.get("shopping_entity"),
+        _options(data).get(CONF_SHOPPING_ENTITY),
+        DEFAULT_SHOPPING_ENTITY,
+        OWN_LIST_ENTITY,
+    ]
+    for entity_id in candidates:
+        if entity_id and hass.states.get(entity_id):
+            return entity_id
+    return None
+
+
+def _shopping_info(hass: HomeAssistant, data: FrigoData) -> dict[str, Any]:
+    entity_id = _shopping_entity(hass, data)
+    state = hass.states.get(entity_id) if entity_id else None
+    return {"entity_id": entity_id, "name": state.name if state else None, "builtin": entity_id == OWN_LIST_ENTITY}
 
 
 def _parse_date(value: str) -> date:
@@ -113,8 +130,8 @@ async def _add_to_list(
     entity_id = _shopping_entity(hass, data)
     if entity_id is None:
         raise HomeAssistantError(
-            "Aucune liste de courses trouvée. Ajoutez l'intégration « Liste de courses » "
-            "ou choisissez une liste dans les options de Frigo Malin."
+            "Aucune liste de courses disponible. Choisissez-en une dans ⚙️ Réglages du foyer "
+            "(Portions et liste de courses)."
         )
     target = {"entity_id": entity_id}
     try:
@@ -193,8 +210,6 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
 def ws_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     data = _data(hass)
     options = _options(data)
-    entity_id = _shopping_entity(hass, data)
-    state = hass.states.get(entity_id) if entity_id else None
     connection.send_result(
         msg["id"],
         {
@@ -203,7 +218,7 @@ def ws_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, m
             "model": options.get(CONF_MODEL) or DEFAULT_MODELS[options[CONF_PROVIDER]],
             "default_servings": _servings_default(data),
             "auto_shopping": bool(options.get(CONF_AUTO_SHOPPING, True)),
-            "shopping_list": {"entity_id": entity_id, "name": state.name if state else None},
+            "shopping_list": _shopping_info(hass, data),
             "drives": [{"key": key, "name": cls.name} for key, cls in CONNECTORS.items()],
             "settings": data.store.settings,
             "is_admin": connection.user.is_admin,
@@ -376,7 +391,8 @@ def ws_plan_list(hass: HomeAssistant, connection: websocket_api.ActiveConnection
 async def ws_plan_add(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     data = _data(hass)
     try:
-        entry = data.store.add_plan(msg["date"], msg["slot"], msg["recipe_id"], msg.get("servings"), msg["note"])
+        servings = msg.get("servings") or _servings_default(data)
+        entry = data.store.add_plan(msg["date"], msg["slot"], msg["recipe_id"], servings, msg["note"])
     except KeyError:
         connection.send_error(msg["id"], "not_found", "Recette introuvable")
         return
@@ -514,7 +530,10 @@ def ws_shopping_suggestions(
 def ws_settings_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     data = _data(hass)
     settings = data.store.save_settings(msg["settings"])
-    connection.send_result(msg["id"], {"settings": settings, "default_servings": _servings_default(data)})
+    connection.send_result(
+        msg["id"],
+        {"settings": settings, "default_servings": _servings_default(data), "shopping_list": _shopping_info(hass, data)},
+    )
 
 
 # ---------------------------------------------------------------------- photo d'une recette

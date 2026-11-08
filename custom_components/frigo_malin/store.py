@@ -43,6 +43,9 @@ class _MigratingStore(Store[dict[str, Any]]):
         if old_major_version == 1 and old_minor_version < 3:
             # 1.2.0 : réglages du foyer (profils, préférences, magasins).
             data.setdefault("settings", normalize_settings(None))
+        if old_major_version == 1 and old_minor_version < 4:
+            # 1.4.0 : liste de courses intégrée.
+            data.setdefault("shopping_items", [])
         if old_major_version > STORAGE_VERSION:
             raise NotImplementedError("Données créées par une version plus récente de Frigo Malin")
         return data
@@ -60,6 +63,8 @@ class FrigoStore:
         # Articles ajoutés à la main, pour proposer des suggestions : clé -> {name, count, last}.
         self.shopping_history: dict[str, dict[str, Any]] = {}
         self.settings: dict[str, Any] = normalize_settings(None)
+        # Articles de la liste de courses intégrée (todo.frigo_malin_courses).
+        self.shopping_items: list[dict[str, Any]] = []
         self._listeners: list[Callable[[], None]] = []
 
     async def async_load(self) -> None:
@@ -69,6 +74,7 @@ class FrigoStore:
         self.last_version = data.get("last_version")
         self.shopping_history = data.get("shopping_history", {})
         self.settings = normalize_settings(data.get("settings"))
+        self.shopping_items = data.get("shopping_items", [])
 
     def set_last_version(self, version: str) -> None:
         self.last_version = version
@@ -81,7 +87,11 @@ class FrigoStore:
             "plan": list(self.plan.values()),
             "shopping_history": self.shopping_history,
             "settings": self.settings,
+            "shopping_items": self.shopping_items,
         }
+
+    def save_shopping_items(self) -> None:
+        self._save()
 
     # ------------------------------------------------------------------ réglages
 

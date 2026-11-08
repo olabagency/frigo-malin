@@ -7,6 +7,23 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.4.0] – 2026-11-08
+
+### Ajouté
+
+- **Liste de courses intégrée** (`todo.frigo_malin_courses`) : Frigo Malin fonctionne sans l'intégration « Liste de courses » de Home Assistant. Elle est utilisée automatiquement si aucune autre liste n'est trouvée, et apparaît aussi dans l'onglet « À faire » de HA.
+- **Choix de la liste de courses dans l'app** (⚙️ Réglages → Portions et liste de courses) : n'importe quelle liste de Home Assistant (Liste de courses, Bring!, Todoist…).
+- **Nombre de personnes par défaut** (⚙️ Réglages) : « Auto » (calculé d'après le foyer) ou un nombre fixe, par exemple 2. Les recettes s'ouvrent directement à ce nombre de personnes, quantités recalculées, et les repas planifiés l'utilisent.
+
+### Corrigé
+
+- Planifier un repas affichait « Aucune liste de courses trouvée » quand l'intégration « Liste de courses » de HA n'était pas installée.
+- Les quantités sous 1 kg ou 1 l s'affichent en g ou cl (« 500 g » plutôt que « ½ kg »).
+
+### Données
+
+- Vos données sont converties automatiquement au démarrage pour accueillir la liste de courses intégrée.
+
 ## [1.3.0] – 2026-11-08
 
 ### Ajouté

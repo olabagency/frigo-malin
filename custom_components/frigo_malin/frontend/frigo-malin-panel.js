@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.3.0";
+const FM_VERSION = "1.4.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -60,7 +60,12 @@ function fmtUnit(unit, qty) {
 }
 
 function fmtIngredient(ing, factor = 1) {
-  const qty = ing.quantity == null ? null : ing.quantity * factor;
+  let qty = ing.quantity == null ? null : ing.quantity * factor;
+  let unit = ing.unit;
+  // « 0,5 kg » se lit mieux « 500 g », « 0,25 l » mieux « 25 cl ».
+  if (qty != null && qty < 1 && unit === "kg") [qty, unit] = [qty * 1000, "g"];
+  else if (qty != null && qty < 1 && unit === "l") [qty, unit] = [qty * 100, "cl"];
+  ing = { ...ing, unit };
   const parts = [];
   if (qty != null) parts.push(fmtNumber(qty));
   if (ing.unit) parts.push(fmtUnit(ing.unit, qty));
@@ -781,6 +786,11 @@ class FrigoMalinPanel extends HTMLElement {
     this._render();
   }
 
+  /* Nombre de personnes proposé par défaut (réglage du foyer). */
+  get defaultServings() {
+    return (this.s.config && this.s.config.default_servings) || 4;
+  }
+
   get settings() {
     return (this.s.config && this.s.config.settings) || { members: [], stores: [], plan_slots: {} };
   }
@@ -870,7 +880,7 @@ class FrigoMalinPanel extends HTMLElement {
     const items = texts.flatMap((t) => String(t).split(/[,;\n]/)).map((t) => t.trim()).filter(Boolean);
     if (!items.length) return;
     if (!this.listEntity) {
-      this._toast("Aucune liste de courses : choisissez-en une dans les options de Frigo Malin.", true);
+      this._toast("Aucune liste de courses : choisissez-en une dans ⚙️ Réglages du foyer.", true);
       return;
     }
     try {
@@ -1102,6 +1112,10 @@ class FrigoMalinPanel extends HTMLElement {
         s.stack.push({ type: "settings", draft: clone(this.settings) });
         this._renderOverlay();
         return;
+      case "set-servings":
+        this.top.draft.servings = d.value ? Number(d.value) : null;
+        this._renderOverlay();
+        return;
       case "settings-save":
         this._saveSettings();
         return;
@@ -1282,14 +1296,14 @@ class FrigoMalinPanel extends HTMLElement {
         const r = s.library.recipes.find((x) => x.id === d.id);
         if (!r) return;
         const saved = this._libRecipeInCarnet(r);
-        if (saved) s.stack.push({ type: "recipe", id: saved.id, servings: saved.servings || 4, confirmDelete: false });
-        else s.stack.push({ type: "recipe", draft: clone(r), servings: r.servings || 4 });
+        if (saved) s.stack.push({ type: "recipe", id: saved.id, servings: this.defaultServings, confirmDelete: false });
+        else s.stack.push({ type: "recipe", draft: clone(r), servings: this.defaultServings });
         this._renderOverlay();
         return;
       }
       case "lib-idea-open": {
         const r = s.library.ideas[Number(d.i)];
-        if (r) s.stack.push({ type: "recipe", draft: clone(r), servings: r.servings || 4 });
+        if (r) s.stack.push({ type: "recipe", draft: clone(r), servings: this.defaultServings });
         this._renderOverlay();
         return;
       }
@@ -1303,7 +1317,7 @@ class FrigoMalinPanel extends HTMLElement {
       case "open-recipe": {
         const r = this._recipe(d.id);
         if (!r) return;
-        s.stack.push({ type: "recipe", id: r.id, servings: r.servings || 4, confirmDelete: false });
+        s.stack.push({ type: "recipe", id: r.id, servings: this.defaultServings, confirmDelete: false });
         this._renderOverlay();
         return;
       }
@@ -1428,6 +1442,14 @@ class FrigoMalinPanel extends HTMLElement {
       this.s.config.settings = res.settings;
       this.s.config.default_servings = res.default_servings;
       this.s.fridge.servings = res.default_servings;
+      const before = this.listEntity;
+      this.s.config.shopping_list = res.shopping_list;
+      if (this.listEntity !== before) {
+        this._unsubscribeList();
+        this.s.list.items = [];
+        this.s.list.loaded = false;
+        this._subscribeList();
+      }
       if (this.s.list.storeId && !res.settings.stores.some((x) => x.id === this.s.list.storeId)) this._pickStore(null);
       this.s.stack.pop();
       this._toast("Réglages enregistrés");
@@ -1822,7 +1844,7 @@ class FrigoMalinPanel extends HTMLElement {
     const top = this.top;
     const r = this._recipe(id);
     try {
-      const res = await this._ws("plan/add", { date: top.date, slot: top.slot, recipe_id: id, servings: r.servings || this.s.config?.default_servings || 4 });
+      const res = await this._ws("plan/add", { date: top.date, slot: top.slot, recipe_id: id, servings: this.defaultServings });
       this.s.stack.pop();
       this._afterPlanAdd(res, top.date);
     } catch (err) {
@@ -2191,7 +2213,7 @@ class FrigoMalinPanel extends HTMLElement {
   _tplShopList() {
     const l = this.s.list;
     if (!this.listEntity) {
-      return `<div class="alert">Aucune liste de courses trouvée. Ajoutez l'intégration « Liste de courses » de Home Assistant, ou choisissez une liste dans les options de Frigo Malin.</div>`;
+      return `<div class="alert">Aucune liste de courses disponible. Choisissez-en une dans ⚙️ Réglages du foyer → Portions et liste de courses.</div>`;
     }
     if (l.error) return `<div class="alert">${esc(l.error)}</div>`;
     if (!l.loaded) return `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`;
@@ -2288,6 +2310,23 @@ class FrigoMalinPanel extends HTMLElement {
         .join("")}
       <button class="btn tonal block" data-action="member-add">${icon("account-plus-outline")} Ajouter une personne</button>
       ${d.members.length ? `<p class="hh-hint">${icon("silverware-fork-knife")} Portions calculées : ${fmtNumber(portions)} → ${Math.max(1, Math.ceil(portions - 0.01))} par repas (un enfant compte pour ½).</p>` : ""}
+
+      <div class="set-sec">${bubble("silverware-fork-knife", COLORS.green)}<h3>Portions et liste de courses</h3></div>
+      <div class="field"><span>Nombre de personnes par défaut (recettes, menus, idées)</span>
+        <div class="chips">
+          <button class="chip ${!d.servings ? "on" : ""}" data-action="set-servings" data-value="">Auto${d.members.length ? ` (${Math.max(1, Math.ceil(portions - 0.01))})` : ""}</button>
+          ${[1, 2, 3, 4, 5, 6, 8].map((n) => `<button class="chip ${d.servings === n ? "on" : ""}" data-action="set-servings" data-value="${n}">${n} pers.</button>`).join("")}
+        </div>
+      </div>
+      <label class="field"><span>${icon("cart-outline")} Liste de courses</span>
+        <select class="input" data-model="top.draft.shopping_entity">
+          <option value="">Automatique${this.s.config.shopping_list && this.s.config.shopping_list.name && !d.shopping_entity ? ` (${esc(this.s.config.shopping_list.name)})` : ""}</option>
+          ${Object.keys(this._hass.states)
+            .filter((id) => id.startsWith("todo."))
+            .map((id) => `<option value="${esc(id)}" ${d.shopping_entity === id ? "selected" : ""}>${esc(this._hass.states[id].attributes.friendly_name || id)}</option>`)
+            .join("")}
+        </select></label>
+      <p class="muted small" style="margin-top:-6px">« Frigo Malin courses » est la liste intégrée, utilisée si vous n'en choisissez pas d'autre. Toute liste de Home Assistant convient (Liste de courses, Bring!, Todoist…).</p>
 
       <div class="set-sec">${bubble("timer-outline", COLORS.orange)}<h3>Temps et budget</h3></div>
       <div class="row wrap" style="justify-content:space-between;margin-bottom:12px">
@@ -3037,7 +3076,7 @@ class FrigoMalinPanel extends HTMLElement {
       const count = top.items.filter((i) => i.checked).length;
       body = `
         <p class="muted" style="margin-top:0">${top.onlyNew ? "Repas pas encore ajoutés" : "Tous les repas de la semaine"}. Décochez ce que vous avez déjà.</p>
-        ${top.list_name ? "" : `<div class="alert">Aucune liste de courses trouvée. Ajoutez l'intégration « Liste de courses » de Home Assistant ou choisissez une liste dans les options de Frigo Malin.</div>`}
+        ${top.list_name ? "" : `<div class="alert">Aucune liste de courses disponible. Choisissez-en une dans ⚙️ Réglages du foyer.</div>`}
         <div class="row" style="justify-content:space-between">
           <span class="small muted">${count} / ${top.items.length} sélectionnés</span>
           <button class="btn text" data-action="shop-toggle-all">${icon(top.items.every((i) => i.checked) ? "checkbox-multiple-blank-outline" : "checkbox-multiple-marked-outline")} ${top.items.every((i) => i.checked) ? "Tout décocher" : "Tout cocher"}</button>
