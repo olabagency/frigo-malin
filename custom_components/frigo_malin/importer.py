@@ -10,11 +10,11 @@ from urllib.parse import urlparse
 import aiohttp
 
 from .ai import AIClient, AIError
-from .parsing import count_ldjson, extract_recipe_from_html, html_to_text
+from .parsing import count_ldjson, extract_recipe_from_html, extract_recipe_from_microdata, html_to_text
 
 _LOGGER = logging.getLogger(__name__)
 
-MAX_PAGE_SIZE = 4 * 1024 * 1024
+MAX_PAGE_SIZE = 8 * 1024 * 1024
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -41,13 +41,23 @@ async def async_import_recipe(session: aiohttp.ClientSession, ai: AIClient, url:
         ) as resp:
             if resp.status >= 400:
                 raise RecipeImportError(f"Le site a répondu avec l'erreur {resp.status}.")
-            raw = await resp.content.read(MAX_PAGE_SIZE)
-            page = raw.decode(resp.charset or "utf-8", errors="replace")
+            # On lit la page jusqu'au bout : content.read(n) ne renvoie que ce qui est déjà
+            # arrivé (souvent un seul morceau), d'où des pages tronquées sans la recette.
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in resp.content.iter_chunked(64 * 1024):
+                chunks.append(chunk)
+                size += len(chunk)
+                if size >= MAX_PAGE_SIZE:
+                    break
+            page = b"".join(chunks).decode(resp.charset or "utf-8", errors="replace")
             final_url = str(resp.url)
     except (aiohttp.ClientError, asyncio.TimeoutError) as err:
         raise RecipeImportError("Impossible d'ouvrir cette page.") from err
 
     recipe = extract_recipe_from_html(page, final_url)
+    if not (recipe and recipe["ingredients"]):
+        recipe = extract_recipe_from_microdata(page, final_url)
     if recipe and recipe["ingredients"]:
         recipe["origin"] = "url"
         return recipe

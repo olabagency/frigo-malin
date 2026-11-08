@@ -7,6 +7,15 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.0.2] – 2026-11-08
+
+### Corrigé
+
+- Import depuis une adresse : la page était lue en partie seulement (premier morceau reçu), si bien que la recette de Marmiton n'était jamais trouvée. La page est maintenant lue en entier.
+- Les fiches recettes écrites sans guillemets (`type=application/ld+json`, pages compressées) sont reconnues.
+- Les recettes décrites en microdonnées (`itemprop`) sont aussi reconnues.
+- Le CSS et le JavaScript ne sont plus envoyés à l'IA quand elle doit lire la page.
+
 ## [1.0.1] – 2026-11-08
 
 ### Corrigé

@@ -339,7 +339,8 @@ def aggregate_shopping(
 # --------------------------------------------------------------------------
 
 _LDJSON_RE = re.compile(
-    r"<script[^>]*type\s*=\s*[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
+    # Guillemets facultatifs : les pages « minifiées » (Marmiton…) écrivent type=application/ld+json.
+    r"<script\b[^>]*\btype\s*=\s*[\"']?application/ld\+json[\"']?[^>]*>(.*?)</script\s*>",
     re.I | re.S,
 )
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -493,6 +494,50 @@ def extract_recipe_from_html(page: str, url: str = "") -> dict[str, Any] | None:
     return None
 
 
+_CODE_CHARS = re.compile(r"[{};<>=]|\b(?:var|function|const|return|px|rem|margin|padding|display)\b")
+
+
+def _looks_like_code(line: str) -> bool:
+    """Repère les restes de CSS ou de JavaScript dans le texte d'une page."""
+    if re.search(r"\{[^{}]*:[^{}]*\}|function\s*\(|=>|\bvar\(--", line):
+        return True
+    if len(line) < 25:
+        return bool(re.search(r"[{}]", line))
+    return len(_CODE_CHARS.findall(line)) * 12 > len(line)
+
+
+def extract_recipe_from_microdata(page: str, url: str = "") -> dict[str, Any] | None:
+    """Recette décrite avec des microdonnées (itemprop=...) plutôt qu'en JSON-LD."""
+
+    def items(prop: str) -> list[str]:
+        pattern = rf"<(\w+)\b[^>]*\bitemprop\s*=\s*[\"']?{prop}[\"']?[^>]*>(.*?)</\1\s*>"
+        return [t for t in (clean_text(m.group(2)) for m in re.finditer(pattern, page, re.I | re.S)) if t]
+
+    def meta(prop: str) -> str:
+        m = re.search(rf"<meta\b[^>]*\bitemprop\s*=\s*[\"']?{prop}[\"']?[^>]*\bcontent\s*=\s*[\"']([^\"']*)", page, re.I)
+        return html.unescape(m.group(1)) if m else ""
+
+    ingredients = [i for i in (normalize_ingredient(x) for x in items("recipeIngredient") or items("ingredients")) if i]
+    if not ingredients:
+        return None
+    steps = items("recipeInstructions")
+    if len(steps) == 1:
+        steps = [s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-ZÉÈÀ])", steps[0]) if s.strip()]
+    title = (items("name") or [""])[0] or meta("name")
+    return {
+        "title": title or "Recette importée",
+        "description": "",
+        "image": meta("image"),
+        "servings": _parse_yield(meta("recipeYield") or (items("recipeYield") or [""])[0]),
+        "prep_time": parse_duration(meta("prepTime")),
+        "cook_time": parse_duration(meta("cookTime")),
+        "ingredients": ingredients,
+        "steps": steps,
+        "tags": [],
+        "source_url": url,
+    }
+
+
 def html_to_text(page: str, limit: int = 40000) -> str:
     """Texte brut d'une page, pour l'analyse par l'IA en secours.
 
@@ -501,14 +546,18 @@ def html_to_text(page: str, limit: int = 40000) -> str:
     """
     title_match = re.search(r"<title[^>]*>(.*?)</title>", page, re.I | re.S)
     title = clean_text(title_match.group(1)) if title_match else ""
-    page = re.sub(r"<(script|style|noscript|svg|header|footer|nav|form|iframe)\b[^>]*>.*?</\1>", " ", page, flags=re.I | re.S)
     page = re.sub(r"<!--.*?-->", " ", page, flags=re.S)
+    # Une passe par balise : un <script> qui contient le texte « <style> » ne doit pas tout fausser.
+    for tag in ("script", "style", "noscript", "template", "svg", "iframe", "header", "footer", "nav", "form", "button", "select"):
+        page = re.sub(rf"<{tag}\b[^>]*>.*?</{tag}\s*>", " ", page, flags=re.I | re.S)
+        page = re.sub(rf"<{tag}\b[^>]*/>", " ", page, flags=re.I)
     page = re.sub(r"<(br|/p|/li|/h\d|/div|/tr)\b[^>]*>", "\n", page, flags=re.I)
     text = html.unescape(_TAG_RE.sub(" ", page))
     lines = [" ".join(line.split()) for line in text.splitlines()]
-    text = "\n".join(line for line in lines if line)
+    text = "\n".join(line for line in lines if line and not _looks_like_code(line))
     start = 0
-    found = re.search(r"ingr[ée]dients?", text, re.I)
+    # De préférence un titre « Ingrédients » seul sur sa ligne, sinon la première mention.
+    found = re.search(r"^\s*ingr[ée]dients?\b.{0,40}$", text, re.I | re.M) or re.search(r"ingr[ée]dients?", text, re.I)
     if found and len(text) > limit:
         start = max(0, found.start() - 3000)
     body = text[start : start + limit]
