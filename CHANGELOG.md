@@ -7,6 +7,19 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.3.0] – 2026-11-08
+
+### Ajouté
+
+- **Bibliothèque de recettes saines** (onglet Recettes → 🌿 Bibliothèque) : 42 recettes équilibrées, anti-inflammatoires, de saison et gourmandes, du petit-déjeuner au dessert. Filtres par thème (anti-inflammatoire, équilibré, végétarien, vegan, sans gluten, rapide, protéiné, léger, petit budget, se garde bien), par type de repas et « de saison », recherche par ingrédient.
+- Chaque recette explique **pourquoi c'est bon** (oméga-3, fibres, curcuma + poivre…) et s'ajoute au carnet en un appui.
+- **Adaptée au foyer** : les recettes contenant un allergène d'une personne du foyer sont masquées, ou signalées si vous choisissez de les voir.
+- **Encore plus d'idées** : l'IA invente de nouvelles recettes sur le thème choisi, de saison, adaptées au foyer et différentes de celles que vous avez déjà.
+
+### Corrigé
+
+- « 3 cm de gingembre » est maintenant lu correctement (le centimètre est reconnu comme unité).
+
 ## [1.2.1] – 2026-11-08
 
 ### Corrigé

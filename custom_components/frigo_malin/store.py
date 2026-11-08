@@ -128,7 +128,10 @@ class FrigoStore:
     # ------------------------------------------------------------------ recettes
 
     def save_recipe(self, raw: dict[str, Any], default_servings: int = DEFAULT_SERVINGS) -> dict[str, Any]:
-        recipe_id = raw.get("id") or uuid4().hex
+        recipe_id = raw.get("id")
+        # Une recette de la bibliothèque (« lib-… ») ou inconnue devient une nouvelle recette du carnet.
+        if not recipe_id or recipe_id not in self.recipes:
+            recipe_id = uuid4().hex
         existing = self.recipes.get(recipe_id, {})
         now = dt_util.utcnow().isoformat()
         title = str(raw.get("title") or "").strip()
@@ -152,6 +155,8 @@ class FrigoStore:
             "notes": str(raw.get("notes", existing.get("notes", "")) or ""),
             "source_url": str(raw.get("source_url") or existing.get("source_url") or ""),
             "origin": raw.get("origin") or existing.get("origin") or "manual",
+            "library_id": str(raw.get("library_id") or existing.get("library_id") or "") or None,
+            "benefits": _str_list(raw.get("benefits", existing.get("benefits")))[:6],
             "created_at": existing.get("created_at", now),
             "updated_at": now,
         }

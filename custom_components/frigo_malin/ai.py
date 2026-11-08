@@ -253,6 +253,36 @@ class AIClient:
         recipe["source_url"] = url
         return recipe
 
+    async def theme_recipes(
+        self,
+        theme: str,
+        dish_type: str = "",
+        count: int = 4,
+        servings: int = 4,
+        household: str = "",
+        month: str = "",
+        exclude: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Nouvelles recettes saines sur un thème (anti-inflammatoire, vegan…)."""
+        count = max(1, min(int(count), 6))
+        prompt = (
+            f"Propose {count} recettes {theme.lower() if theme else 'saines et équilibrées'}"
+            + (f" de type « {dish_type.lower()} »" if dish_type else "")
+            + f" pour {servings} personnes, en France, au mois de {month}.\n"
+            "Cuisine saine et gourmande : légumes, légumineuses, céréales complètes, bons gras (huile d'olive, colza,"
+            " noix, poissons gras), épices (curcuma avec du poivre, gingembre), peu de sucre et peu de produits transformés.\n"
+            "Produits de saison. Recettes réalistes un soir de semaine, 7 étapes au plus, phrases courtes.\n"
+            "Dans \"tags\", indique les bienfaits nutritionnels en 2 ou 3 mots chacun (ex. « Oméga-3 », « Fibres »).\n"
+        )
+        if exclude:
+            prompt += "Évite ces recettes, déjà connues : " + ", ".join(exclude[:60]) + ".\n"
+        if household:
+            prompt += f"\nProfil du foyer :\n{household}\n"
+        prompt += f"\nRéponds avec ce JSON :\n{RECIPE_SCHEMA}"
+        data = await self._complete(prompt)
+        recipes = data.get("recipes", []) if isinstance(data, dict) else []
+        return [clean_ai_recipe(r) for r in recipes if isinstance(r, dict) and r.get("title")]
+
     async def recipe_from_photos(self, images: list[tuple[str, str]]) -> dict[str, Any]:
         """Lit une recette photographiée (livre, fiche manuscrite…)."""
         data = await self._complete(PHOTO_PROMPT, images=images)

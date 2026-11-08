@@ -131,3 +131,7 @@ def test_html_to_text_keeps_the_recipe_part():
     assert text.startswith("Titre de la page : Tarte")
     assert "200 g de farine" in text
     assert len(text) < 41000
+
+
+def test_centimetres_are_a_unit():
+    assert parse_ingredient("3 cm de gingembre frais") == {"quantity": 3.0, "unit": "cm", "name": "gingembre frais"}

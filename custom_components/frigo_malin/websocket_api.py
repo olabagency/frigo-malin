@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import dt as dt_util
 
 from .ai import AIError
 from .const import (
@@ -34,6 +35,7 @@ from .const import (
 from .drive import CONNECTORS
 from .importer import RecipeImportError, async_import_recipe
 from .household import household_context, household_servings
+from .library import THEMES, TYPES, load_library
 from .parsing import aggregate_shopping, merge_into_list, parse_excluded, parse_list_text, shopping_key
 
 if TYPE_CHECKING:
@@ -177,6 +179,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_recipes_from_photo,
         ws_plan_generate,
         ws_plan_apply,
+        ws_library_list,
+        ws_library_ideas,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -652,3 +656,54 @@ async def ws_plan_apply(hass: HomeAssistant, connection: websocket_api.ActiveCon
         except HomeAssistantError as err:
             result["shopping_error"] = str(err)
     connection.send_result(msg["id"], result)
+
+
+# ---------------------------------------------------------------------- bibliothèque de recettes saines
+
+
+async def _library(hass: HomeAssistant) -> list[dict[str, Any]]:
+    key = f"{DOMAIN}_library"
+    if key not in hass.data:
+        hass.data[key] = await hass.async_add_executor_job(load_library)
+    return hass.data[key]
+
+
+@websocket_api.websocket_command({vol.Required("type"): "frigo_malin/library/list"})
+@websocket_api.async_response
+async def ws_library_list(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    recipes = await _library(hass)
+    connection.send_result(msg["id"], {"recipes": recipes, "themes": THEMES, "types": TYPES})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "frigo_malin/library/ideas",
+        vol.Optional("theme", default=""): vol.Any("", vol.In(list(THEMES))),
+        vol.Optional("dish_type", default=""): vol.Any("", vol.In(list(TYPES))),
+        vol.Optional("count", default=4): vol.All(int, vol.Range(min=1, max=6)),
+    }
+)
+@websocket_api.async_response
+async def ws_library_ideas(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Nouvelles recettes saines générées par l'IA sur un thème, adaptées au foyer."""
+    data = _data(hass)
+    library = await _library(hass)
+    known = [r["title"] for r in library] + [r["title"] for r in data.store.recipes.values()]
+    try:
+        recipes = await data.ai.theme_recipes(
+            THEMES.get(msg["theme"], ""),
+            TYPES.get(msg["dish_type"], ""),
+            count=msg["count"],
+            servings=_servings_default(data),
+            household=household_context(data.store.settings),
+            month=MONTHS[dt_util.now().month - 1],
+            exclude=known,
+        )
+    except AIError as err:
+        _error(connection, msg["id"], err)
+        return
+    for recipe in recipes:
+        recipe["benefits"] = recipe.pop("tags", [])[:4]
+        recipe["tags"] = [THEMES[msg["theme"]]] if msg["theme"] else []
+        recipe["origin"] = "ai"
+    connection.send_result(msg["id"], {"recipes": recipes})

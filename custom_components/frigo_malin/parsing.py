@@ -54,6 +54,7 @@ _UNIT_ALIASES: dict[str, str] = {
     "gramme": "g",
     "grammes": "g",
     "mg": "mg",
+    "cm": "cm",
     "l": "l",
     "litre": "l",
     "litres": "l",
@@ -125,7 +126,7 @@ for _word in _UNIT_WORDS:
 _SORTED_UNITS = sorted(_UNIT_ALIASES, key=len, reverse=True)
 
 # Abréviations qui ne prennent jamais de « s ».
-_ABBREVIATIONS = {"kg", "g", "mg", "l", "dl", "cl", "ml", "c. à soupe", "c. à café"}
+_ABBREVIATIONS = {"kg", "g", "mg", "cm", "l", "dl", "cl", "ml", "c. à soupe", "c. à café"}
 
 _NUMBER_RE = re.compile(
     r"^\s*(?P<num>\d+\s+\d+/\d+|\d+(?:[.,]\d+)?\s*/\s*\d+|\d+(?:[.,]\d+)?)"

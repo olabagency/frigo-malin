@@ -419,3 +419,41 @@ async def test_store_reminder(hass: HomeAssistant, hass_ws_client) -> None:
     assert data["title"] == "🛒 2 articles à acheter chez Leclerc Saint-Jean"
     assert data["message"] == "Lait, Pain"
     assert data["data"]["clickAction"] == f"/frigo-malin?tab=shopping&store={store_id}"
+
+
+async def test_library_and_ideas(hass: HomeAssistant, hass_ws_client, aioclient_mock) -> None:
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    library = await ws("library/list")
+    assert library["success"], library
+    recipes = library["result"]["recipes"]
+    assert len(recipes) >= 40
+    soup = next(r for r in recipes if r["library_id"] == "soupe-lentilles-corail-curcuma")
+
+    # Ajouter une recette de la bibliothèque au carnet : nouvel identifiant, lien et bienfaits conservés.
+    saved = await ws("recipes/save", recipe={k: v for k, v in soup.items() if k not in ("themes", "allergens", "months")})
+    assert saved["success"], saved
+    recipe = saved["result"]["recipe"]
+    assert recipe["id"] != soup["id"] and not recipe["id"].startswith("lib-")
+    assert recipe["library_id"] == "soupe-lentilles-corail-curcuma"
+    assert recipe["benefits"] == soup["benefits"]
+
+    aioclient_mock.post(
+        "https://api.anthropic.com/v1/messages",
+        json={"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({"recipes": [{
+            "title": "Bowl sarrasin et saumon", "servings": 2, "tags": ["Oméga-3", "Fibres"],
+            "ingredients": [{"quantity": 150, "unit": "g", "name": "sarrasin"}], "steps": ["Cuire", "Servir"],
+        }]})}]},
+    )
+    ideas = await ws("library/ideas", theme="anti_inflammatory", dish_type="main", count=2)
+    assert ideas["success"], ideas
+    idea = ideas["result"]["recipes"][0]
+    assert idea["benefits"] == ["Oméga-3", "Fibres"]
+    assert idea["tags"] == ["Anti-inflammatoire"]
+    prompt = aioclient_mock.mock_calls[-1][2]["messages"][0]["content"][-1]["text"]
+    assert "anti-inflammatoire" in prompt and "plat" in prompt and "Soupe de lentilles corail" in prompt
