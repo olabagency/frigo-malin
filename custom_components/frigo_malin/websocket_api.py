@@ -203,6 +203,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_plan_update,
         ws_plan_delete,
         ws_plan_shopping_impact,
+        ws_plan_move,
+        ws_plan_copy,
         ws_shopping_preview,
         ws_shopping_add,
         ws_shopping_suggestions,
@@ -511,6 +513,59 @@ async def ws_plan_delete(hass: HomeAssistant, connection: websocket_api.ActiveCo
                 updated.append(op["text"])
     data.store.delete_plan(msg["entry_id"])
     connection.send_result(msg["id"], {"removed": removed, "updated": updated})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "frigo_malin/plan/move",
+        vol.Required("entry_id"): str,
+        vol.Required("date"): _parse_date,
+        vol.Required("slot"): vol.In(SLOTS),
+    }
+)
+@callback
+def ws_plan_move(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Déplace un repas (échange avec celui du créneau visé). La liste de courses ne change pas."""
+    store = _data(hass).store
+    if msg["entry_id"] not in store.plan:
+        connection.send_error(msg["id"], "not_found", "Repas introuvable")
+        return
+    connection.send_result(msg["id"], {"changed": store.move_plan(msg["entry_id"], msg["date"], msg["slot"])})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "frigo_malin/plan/copy",
+        vol.Required("meals"): [
+            {
+                vol.Required("recipe_id"): str,
+                vol.Required("date"): _parse_date,
+                vol.Required("slot"): vol.In(SLOTS),
+                vol.Optional("servings"): vol.All(int, vol.Range(min=1, max=30)),
+                vol.Optional("note", default=""): str,
+            }
+        ],
+    }
+)
+@websocket_api.async_response
+async def ws_plan_copy(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Reprend des repas d'une autre semaine ; leurs ingrédients vont dans la liste de courses."""
+    data = _data(hass)
+    entries = [
+        data.store.add_plan(m["date"], m["slot"], m["recipe_id"], m.get("servings") or _servings_default(data), m["note"])
+        for m in msg["meals"]
+        if m["recipe_id"] in data.store.recipes
+    ]
+    result: dict[str, Any] = {"entries": entries, "added": [], "list_name": None, "shopping_error": None}
+    if entries and _options(data).get(CONF_AUTO_SHOPPING, True):
+        try:
+            summary = await _add_to_list(hass, data, _plan_items(data, entries))
+            result["added"] = summary["added"] + summary["updated"]
+            result["list_name"] = summary["list_name"]
+            result["entries"] = [data.store.update_plan(e["id"], in_shopping_list=True) for e in entries]
+        except HomeAssistantError as err:
+            result["shopping_error"] = str(err)
+    connection.send_result(msg["id"], result)
 
 
 # ---------------------------------------------------------------------- courses

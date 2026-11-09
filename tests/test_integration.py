@@ -599,3 +599,44 @@ async def test_remove_meal_and_its_shopping(hass: HomeAssistant, hass_ws_client)
     assert deleted["result"]["removed"] == ["Crème (50 cl)"]
     assert deleted["result"]["updated"] == ["Pommes de terre (500 g)"]
     assert sorted(await _todo_items(hass)) == ["Poireaux (2)", "Pommes de terre (500 g)"]
+
+
+async def test_move_and_copy_meals(hass: HomeAssistant, hass_ws_client) -> None:
+    await _setup(hass)
+    await _clear_list(hass)
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    a = (await ws("recipes/save", recipe={"title": "Gratin", "servings": 4, "ingredients": ["1 kg de pommes de terre"], "steps": ["Cuire"]}))["result"]["recipe"]
+    b = (await ws("recipes/save", recipe={"title": "Soupe", "servings": 4, "ingredients": ["2 poireaux"], "steps": ["Cuire"]}))["result"]["recipe"]
+    ea = (await ws("plan/add", date="2026-11-09", slot="dinner", recipe_id=a["id"], servings=4))["result"]["entry"]
+    eb = (await ws("plan/add", date="2026-11-10", slot="dinner", recipe_id=b["id"], servings=4))["result"]["entry"]
+    items_before = sorted(await _todo_items(hass))
+
+    # Déplacer le gratin sur le soir de la soupe : les deux s'échangent, la liste ne bouge pas.
+    moved = await ws("plan/move", entry_id=ea["id"], date="2026-11-10", slot="dinner")
+    assert moved["success"], moved
+    plan = {e["recipe_id"]: (e["date"], e["slot"]) for e in (await ws("plan/list", start="2026-11-09", end="2026-11-15"))["result"]["entries"]}
+    assert plan == {a["id"]: ("2026-11-10", "dinner"), b["id"]: ("2026-11-09", "dinner")}
+    assert sorted(await _todo_items(hass)) == items_before
+
+    # Vers un créneau libre : simple déplacement.
+    await ws("plan/move", entry_id=eb["id"], date="2026-11-11", slot="lunch")
+    plan = {e["recipe_id"]: (e["date"], e["slot"]) for e in (await ws("plan/list", start="2026-11-09", end="2026-11-15"))["result"]["entries"]}
+    assert plan[b["id"]] == ("2026-11-11", "lunch")
+
+    # Reprendre deux repas la semaine suivante : les courses suivent.
+    await _clear_list(hass)
+    copied = await ws(
+        "plan/copy",
+        meals=[
+            {"recipe_id": a["id"], "date": "2026-11-17", "slot": "dinner", "servings": 2},
+            {"recipe_id": b["id"], "date": "2026-11-18", "slot": "lunch", "servings": 4},
+        ],
+    )
+    assert copied["success"], copied
+    assert len(copied["result"]["entries"]) == 2
+    assert sorted(await _todo_items(hass)) == ["Poireaux (2)", "Pommes de terre (500 g)"]

@@ -245,6 +245,23 @@ class FrigoStore:
         self._save()
         return entry
 
+    def move_plan(self, entry_id: str, day: date, slot: str) -> list[dict[str, Any]]:
+        """Déplace un repas ; si le créneau est pris, les deux repas s'échangent.
+
+        Renvoie les repas modifiés.
+        """
+        entry = self.plan[entry_id]
+        source = (entry["date"], entry["slot"])
+        target = (day.isoformat(), slot if slot in SLOTS else entry["slot"])
+        if source == target:
+            return []
+        others = [e for e in self.plan.values() if (e["date"], e["slot"]) == target and e["id"] != entry_id]
+        for other in others:
+            other["date"], other["slot"] = source
+        entry["date"], entry["slot"] = target
+        self._save()
+        return [entry, *others]
+
     def delete_plan(self, entry_id: str) -> None:
         self.plan.pop(entry_id, None)
         self._save()

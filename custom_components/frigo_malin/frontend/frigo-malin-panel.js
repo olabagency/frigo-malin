@@ -695,6 +695,22 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .meal .ctrls .incart { margin-right: auto; display: inline-flex; align-items: center; gap: 4px; }
 .meal .pers { font-size: 12px; color: var(--fm-text2); white-space: nowrap; }
 .meal .icon-btn { width: 34px; height: 34px; color: var(--fm-text2); }
+.meal { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.meal.lifting { opacity: .35; }
+.slot.drop { background: var(--fm-soft); border-radius: 12px; box-shadow: inset 0 0 0 2px var(--fm-primary); }
+.drag-ghost {
+  position: absolute; z-index: 40; pointer-events: none; transform: translate(-50%, -60%) rotate(-2deg);
+  background: var(--fm-card); color: var(--fm-text); border: 2px solid var(--fm-primary); border-radius: 14px;
+  padding: 10px 14px; font-weight: 500; box-shadow: 0 10px 30px rgba(0,0,0,.35); max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.week-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+.week-actions .btn { flex: 1; }
+.drag-hint { text-align: center; font-size: 12px; color: var(--fm-text2); margin: -4px 0 10px; }
+.copy-meal { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 4px; border: 0; border-bottom: 1px solid var(--fm-divider); background: none; text-align: left; }
+.copy-meal:last-child { border-bottom: 0; }
+.copy-meal .box { width: 26px; height: 26px; border-radius: 8px; border: 2px solid var(--fm-divider); display: inline-flex; align-items: center; justify-content: center; color: transparent; flex-shrink: 0; }
+.copy-meal.on .box { background: var(--fm-primary); border-color: var(--fm-primary); color: var(--fm-on-primary); }
+.copy-meal .w { font-size: 12px; color: var(--fm-text2); }
 .add-meal { align-self: flex-start; border: 1px dashed var(--fm-divider); background: none; color: var(--fm-text2); border-radius: 10px; min-height: 38px; padding: 0 12px; display: inline-flex; align-items: center; gap: 4px; font-size: 14px; }
 
 /* Feuilles plein écran */
@@ -824,6 +840,17 @@ class FrigoMalinPanel extends HTMLElement {
     this.shadowRoot.addEventListener("touchmove", (ev) => this._onTouchMove(ev), { passive: false });
     this.shadowRoot.addEventListener("touchend", (ev) => this._onTouchEnd(ev), { passive: true });
     this.shadowRoot.addEventListener("focusout", (ev) => this._onFocusOut(ev));
+    // Glisser un repas à la souris (ordinateur).
+    this.shadowRoot.addEventListener("mousedown", (ev) => {
+      if (ev.button === 0) this._mealPressStart(ev, ev.clientX, ev.clientY);
+    });
+    window.addEventListener("mousemove", (ev) => {
+      if (this._mealDrag) this._moveMealDrag(ev.clientX, ev.clientY);
+      else if (this._press && Math.hypot(ev.clientX - this._press.x, ev.clientY - this._press.y) > 6) this._startMealDrag();
+    });
+    window.addEventListener("mouseup", () => {
+      if (this._mealDrag || this._press) this._endMealDrag();
+    });
     // L'iPhone coupe le maintien de l'écran allumé à chaque mise en veille : on le redemande au retour.
     document.addEventListener("visibilitychange", () => this._onVisibility());
   }
@@ -1193,7 +1220,102 @@ class FrigoMalinPanel extends HTMLElement {
     return 152;
   }
 
+  /* --- déplacer un repas du menu : appui long, puis glisser --- */
+
+  _mealPressStart(ev, x, y) {
+    const meal = ev.composedPath().find((n) => n.dataset && n.dataset.meal);
+    if (!meal || ev.composedPath().some((n) => n.tagName === "BUTTON" && n.classList && n.classList.contains("icon-btn"))) return;
+    clearTimeout(this._pressTimer);
+    this._press = { meal, x, y };
+    this._pressTimer = setTimeout(() => this._startMealDrag(), 450);
+  }
+
+  _startMealDrag() {
+    const press = this._press;
+    if (!press) return;
+    const entry = this.s.week.entries.find((e) => e.id === press.meal.dataset.meal);
+    if (!entry) return;
+    const recipe = this._recipe(entry.recipe_id);
+    const ghost = document.createElement("div");
+    ghost.className = "drag-ghost";
+    ghost.textContent = `${recipe ? emojiFor(recipe.title) + " " + recipe.title : "Repas"}`;
+    this.shadowRoot.querySelector(".app").appendChild(ghost);
+    press.meal.classList.add("lifting");
+    this._mealDrag = { id: entry.id, ghost, el: press.meal, target: null };
+    if (navigator.vibrate) navigator.vibrate(25);
+    this._moveMealDrag(press.x, press.y);
+  }
+
+  _dropTargetAt(x, y) {
+    const drag = this._mealDrag;
+    const under = this.shadowRoot.elementFromPoint(x, y);
+    const slot = under && under.closest ? under.closest("[data-drop-slot]") : null;
+    if (slot !== drag.target) {
+      if (drag.target) drag.target.classList.remove("drop");
+      if (slot) slot.classList.add("drop");
+      drag.target = slot;
+    }
+  }
+
+  _moveMealDrag(x, y) {
+    const drag = this._mealDrag;
+    if (!drag) return;
+    const app = this.shadowRoot.querySelector(".app").getBoundingClientRect();
+    drag.ghost.style.left = `${x - app.left}px`;
+    drag.ghost.style.top = `${y - app.top}px`;
+    drag.x = x;
+    drag.y = y;
+    if (drag.startY == null) drag.startY = y;
+    this._dropTargetAt(x, y);
+    // Défilement automatique près des bords, seulement une fois le geste vraiment commencé.
+    const main = this.shadowRoot.getElementById("main");
+    const box = main.getBoundingClientRect();
+    clearInterval(this._dragScroll);
+    if (Math.abs(y - drag.startY) < 24) return;
+    const edge = 56;
+    const speed = y < box.top + edge ? -10 : y > box.bottom - edge ? 10 : 0;
+    if (speed) {
+      this._dragScroll = setInterval(() => {
+        main.scrollTop += speed;
+        // La page bouge sous le doigt : on recalcule le créneau visé.
+        this._dropTargetAt(drag.x, drag.y);
+      }, 16);
+    }
+  }
+
+  async _endMealDrag(cancel = false) {
+    clearTimeout(this._pressTimer);
+    this._press = null;
+    const drag = this._mealDrag;
+    if (!drag) return false;
+    this._mealDrag = null;
+    clearInterval(this._dragScroll);
+    drag.ghost.remove();
+    drag.el.classList.remove("lifting");
+    if (drag.target) drag.target.classList.remove("drop");
+    this._swipeJustMoved = true;
+    setTimeout(() => (this._swipeJustMoved = false), 350);
+    if (cancel || !drag.target) return true;
+    const date = drag.target.dataset.dropDate;
+    const slot = drag.target.dataset.dropSlot;
+    const entry = this.s.week.entries.find((e) => e.id === drag.id);
+    if (!entry || (entry.date === date && entry.slot === slot)) return true;
+    try {
+      const res = await this._ws("plan/move", { entry_id: drag.id, date, slot });
+      for (const changed of res.changed) {
+        const local = this.s.week.entries.find((e) => e.id === changed.id);
+        if (local) Object.assign(local, changed);
+      }
+      this._toast(res.changed.length > 1 ? "🔁 Repas échangés" : `📅 Déplacé au ${fmtDay(date, { weekday: "long" })} ${slot === "lunch" ? "midi" : "soir"}`);
+    } catch (err) {
+      this._toast(this._err(err), true);
+    }
+    this._render();
+    return true;
+  }
+
   _onTouchStart(ev) {
+    this._mealPressStart(ev, ev.touches[0].clientX, ev.touches[0].clientY);
     const t = ev.touches[0];
     this._touchX = t.clientX;
     this._touchY = t.clientY;
@@ -1206,6 +1328,17 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   _onTouchMove(ev) {
+    const t0 = ev.touches[0];
+    if (this._mealDrag) {
+      ev.preventDefault();
+      this._moveMealDrag(t0.clientX, t0.clientY);
+      return;
+    }
+    // Le doigt bouge avant l'appui long : c'est un défilement, pas un déplacement.
+    if (this._press && Math.hypot(t0.clientX - this._press.x, t0.clientY - this._press.y) > 10) {
+      clearTimeout(this._pressTimer);
+      this._press = null;
+    }
     const row = this._swipeRow;
     if (!row || this._touchX == null) return;
     const t = ev.touches[0];
@@ -1223,6 +1356,14 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   _onTouchEnd(ev) {
+    if (this._mealDrag || this._press) {
+      const wasDragging = Boolean(this._mealDrag);
+      this._endMealDrag();
+      if (wasDragging) {
+        this._touchX = null;
+        return;
+      }
+    }
     const dx = this._touchX == null ? 0 : ev.changedTouches[0].clientX - this._touchX;
     const row = this._swipeRow;
     if (row && this._swipeDir === "h") {
@@ -1312,7 +1453,10 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   _onClick(ev) {
-    if (this._swipeJustMoved) return;
+    if (this._swipeJustMoved) {
+      ev.preventDefault();
+      return;
+    }
     const el = ev.composedPath().find((n) => n.dataset && n.dataset.action);
     // Une recette ouverte par glissement se referme au lieu de s'ouvrir.
     if (this._openSwipe && el && el.dataset.action === "open-recipe") {
@@ -1538,6 +1682,22 @@ class FrigoMalinPanel extends HTMLElement {
         return;
 
       /* Planifier la semaine */
+      case "copy-open":
+        this._openCopy();
+        return;
+      case "copy-week":
+        this.top.source = addDays(this.top.source, 7 * Number(d.delta));
+        this._loadCopySource();
+        return;
+      case "copy-toggle": {
+        const m = this.top.meals[Number(d.i)];
+        m.on = !m.on;
+        this._renderOverlay();
+        return;
+      }
+      case "copy-apply":
+        this._applyCopy();
+        return;
       case "weekplan-open":
         this._openWeekPlan();
         return;
@@ -1835,6 +1995,90 @@ class FrigoMalinPanel extends HTMLElement {
       }
       default:
     }
+  }
+
+  /* ---------------- reprendre un menu */
+
+  _openCopy() {
+    this.s.stack.push({ type: "copy", source: addDays(this.s.week.start, -7), target: this.s.week.start, meals: [], loading: true });
+    this._renderOverlay();
+    this._loadCopySource();
+  }
+
+  async _loadCopySource() {
+    const top = this.top;
+    top.loading = true;
+    this._renderOverlay();
+    try {
+      const [src, dst] = await Promise.all([
+        this._ws("plan/list", { start: top.source, end: addDays(top.source, 6) }),
+        this._ws("plan/list", { start: top.target, end: addDays(top.target, 6) }),
+      ]);
+      const taken = new Set(dst.entries.map((e) => `${e.date}|${e.slot}`));
+      top.meals = src.entries
+        .filter((e) => this._recipe(e.recipe_id))
+        .map((e) => {
+          const offset = Math.round((parseIso(e.date) - parseIso(top.source)) / DAY_MS);
+          const date = addDays(top.target, offset);
+          const busy = taken.has(`${date}|${e.slot}`);
+          return { ...e, targetDate: date, busy, on: !busy };
+        });
+    } catch (err) {
+      this._toast(this._err(err), true);
+    }
+    top.loading = false;
+    this._renderOverlay();
+  }
+
+  async _applyCopy() {
+    const top = this.top;
+    const chosen = top.meals.filter((m) => m.on);
+    if (!chosen.length) return;
+    top.loading = true;
+    this._renderOverlay();
+    try {
+      const res = await this._ws("plan/copy", {
+        meals: chosen.map((m) => ({ recipe_id: m.recipe_id, date: m.targetDate, slot: m.slot, servings: m.servings, note: m.note || "" })),
+      });
+      this.s.stack.pop();
+      await this._loadWeek();
+      let msg = `🔁 ${res.entries.length} repas repris`;
+      if (res.added && res.added.length) msg += ` · ${res.added.length} ingrédients dans « ${res.list_name} »`;
+      this._toast(msg);
+      if (res.shopping_error) setTimeout(() => this._toast(res.shopping_error, true), 4200);
+    } catch (err) {
+      top.loading = false;
+      this._renderOverlay();
+      this._toast(this._err(err), true);
+    }
+  }
+
+  _tplCopy(top) {
+    const label = (start) => `${fmtDay(start, { day: "numeric", month: "short" })} – ${fmtDay(addDays(start, 6), { day: "numeric", month: "short" })}`;
+    const n = top.meals.filter((m) => m.on).length;
+    const body = `
+      <p class="muted" style="margin-top:0">Choisissez les repas à refaire. Ils seront placés aux mêmes jours de la semaine du <b>${esc(label(top.target))}</b>, et leurs ingrédients ajoutés à la liste de courses.</p>
+      <div class="week-nav">
+        <button class="icon-btn" data-action="copy-week" data-delta="-1" aria-label="Semaine précédente">${icon("chevron-left")}</button>
+        <div class="label">Menu du ${esc(label(top.source))}</div>
+        <button class="icon-btn" data-action="copy-week" data-delta="1" aria-label="Semaine suivante" ${addDays(top.source, 7) >= top.target ? "disabled" : ""}>${icon("chevron-right")}</button>
+      </div>
+      ${top.loading
+        ? `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`
+        : top.meals.length
+          ? `<div class="card" style="padding:4px 14px">${top.meals
+              .map((m, i) => {
+                const r = this._recipe(m.recipe_id);
+                return `<button class="copy-meal ${m.on ? "on" : ""}" data-action="copy-toggle" data-i="${i}">
+                  <span class="box">${icon("check")}</span>
+                  <span class="ing-emoji">${emojiFor(r.title)}</span>
+                  <span class="grow"><span>${esc(r.title)}</span><br><span class="w">${esc(cap(fmtDay(m.targetDate, { weekday: "long", day: "numeric" })))} · ${m.slot === "lunch" ? "midi" : "soir"} · ${m.servings} pers.${m.busy ? " · ⚠️ déjà un repas prévu" : ""}</span></span>
+                </button>`;
+              })
+              .join("")}</div>`
+          : `<div class="empty"><div class="emoji">🗓️</div><p>Aucun repas cette semaine-là. Remontez plus loin avec ‹.</p></div>`}`;
+    const footer = `<button class="btn grow big" data-action="copy-apply" ${n && !top.loading ? "" : "disabled"}>${icon("content-copy")} Reprendre ${n} repas</button>`;
+    return this._tplSheet("Reprendre un menu", body, footer);
   }
 
   _getPath(path) {
@@ -3509,20 +3753,24 @@ class FrigoMalinPanel extends HTMLElement {
         <button class="icon-btn" data-action="week-shift" data-delta="1" aria-label="Semaine suivante">${icon("chevron-right")}</button>
       </div>
       ${isCurrent ? "" : `<div style="text-align:center;margin:-6px 0 10px"><button class="btn text" data-action="week-today">${icon("calendar-today")} Revenir à cette semaine</button></div>`}
-      <button class="btn tonal block" style="margin-bottom:12px" data-action="weekplan-open">${icon("creation")} Planifier ma semaine avec l'IA</button>
+      <div class="week-actions">
+        <button class="btn tonal" data-action="weekplan-open">${icon("creation")} Planifier avec l'IA</button>
+        <button class="btn tonal" data-action="copy-open">${icon("content-copy")} Reprendre un menu</button>
+      </div>
+      ${w.entries.length ? `<p class="drag-hint">✋ Maintenez un repas puis glissez-le vers un autre jour pour le déplacer.</p>` : ""}
       ${days.join("")}
       <button class="btn big block" data-action="shop-preview" ${w.entries.length ? "" : "disabled"}>${icon("cart-outline")} Liste de courses de la semaine${pending ? ` (${pending} repas)` : ""}</button>`;
   }
 
   _tplSlot(date, slot) {
     const meals = this.s.week.entries.filter((e) => e.date === date && e.slot === slot);
-    return `<div class="slot">
+    return `<div class="slot" data-drop-date="${date}" data-drop-slot="${slot}">
       <div class="sl"><span class="ico" style="--c:${slot === "lunch" ? COLORS.amber : COLORS.indigo}">${icon(slot === "lunch" ? "weather-sunny" : "weather-night")}</span>${SLOT_LABELS[slot]}</div>
       <div class="meals">
         ${meals
           .map((e) => {
             const r = this._recipe(e.recipe_id);
-            return `<div class="meal">
+            return `<div class="meal" data-meal="${esc(e.id)}">
               <button class="name" data-action="meal-open" data-id="${esc(e.id)}">${r ? emojiFor(r.title) + " " : ""}${esc(r ? r.title : "Recette supprimée")}</button>
               ${e.note ? `<div class="note">${/reste/i.test(e.note) ? "♻️" : "📝"} ${esc(e.note)}</div>` : ""}
               <div class="ctrls">
@@ -3581,6 +3829,8 @@ class FrigoMalinPanel extends HTMLElement {
         return this._tplBook(top);
       case "weekplan":
         return this._tplWeekPlan(top);
+      case "copy":
+        return this._tplCopy(top);
       default:
         return "";
     }
