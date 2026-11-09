@@ -7,6 +7,26 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.10.0] – 2026-11-09
+
+### Ajouté
+
+- Accueil : **« Bonjour Adrien 👋 »**, avec le prénom de la personne connectée à Home Assistant.
+- Accueil : **« Pas encore de repas »** liste les repas habituels encore libres dans les 7 prochains jours, avec un bouton pour les planifier avec l'IA d'un seul coup.
+
+### Modifié
+
+- Accueil : le raccourci **Ajout rapide** déplie la saisie directement sous les raccourcis, sans ouvrir de fenêtre ; elle se referme d'un appui à côté.
+- Accueil : le prochain repas affiche aussi sa date (« Ce soir · lun. 9 nov. »).
+- Planifier depuis l'accueil couvre les **7 prochains jours** à partir d'aujourd'hui (et non la semaine du lundi au dimanche), sans proposer le midi déjà passé.
+- « Ajouter au menu » propose par défaut le **premier repas libre** au lieu d'aujourd'hui.
+- Réglages : les thèmes se **déplient sur place, en accordéon** (un seul ouvert à la fois).
+
+### Corrigé
+
+- Ouvrir une fenêtre par-dessus une autre (thème des réglages, personne, magasin, mode cuisine…) ne fait plus apparaître l'accueil une demi-seconde.
+- Planifier depuis l'accueil tient compte des repas déjà prévus, même si l'onglet Semaine n'a pas encore été ouvert.
+
 ## [1.9.0] – 2026-11-09
 
 ### Ajouté

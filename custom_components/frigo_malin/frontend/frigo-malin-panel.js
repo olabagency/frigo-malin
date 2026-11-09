@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.9.0";
+const FM_VERSION = "1.10.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -628,6 +628,12 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .home-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
 .home-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px 10px; border-radius: 16px; border: 1px solid var(--fm-divider); background: var(--fm-card); color: var(--fm-text); font: inherit; font-size: 12px; line-height: 1.2; text-align: center; cursor: pointer; }
 .home-tile:active { transform: scale(.97); }
+.home-tile.on { border-color: var(--fm-primary); background: var(--fm-soft); }
+.home-quick { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .28s ease, opacity .2s ease, margin .28s ease; margin-top: -14px; }
+.home-quick.open { grid-template-rows: 1fr; opacity: 1; margin-top: 0; }
+.home-quick > .inner { overflow: hidden; min-height: 0; }
+.home-quick .card { margin-bottom: 14px; }
+.home-quick .chip { min-height: 32px; padding: 0 10px; font-size: 13px; }
 .home-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .home-head h3 { margin: 0; flex: 1; }
 .home-head .btn.text { min-height: 32px; padding: 0 6px; font-size: 14px; }
@@ -636,6 +642,9 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .home-next .thumb { width: 72px; height: 72px; border-radius: 14px; flex-shrink: 0; object-fit: cover; display: flex; align-items: center; justify-content: center; font-size: 34px; }
 .home-next .when { font-size: 13px; font-weight: 600; color: var(--fm-primary); text-transform: uppercase; letter-spacing: .03em; }
 .home-next .what { font-size: 18px; font-weight: 600; margin: 2px 0 4px; }
+.home-next .when .date { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--fm-text2); }
+.home-free { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--fm-soft); font-size: 14px; }
+.home-free .btn { margin-top: 10px; }
 .home-later { margin-top: 14px; border-top: 1px solid var(--fm-divider); }
 .home-line { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 0; border: 0; border-bottom: 1px solid var(--fm-divider); background: none; color: var(--fm-text); font: inherit; text-align: left; cursor: pointer; }
 .home-line:last-child { border-bottom: 0; }
@@ -649,7 +658,17 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .set-row:last-child { border-bottom: 0; }
 .set-row .t { font-weight: 600; }
 .set-row .m { font-size: 13px; color: var(--fm-text2); margin-top: 2px; }
-.set-row > ha-icon { color: var(--fm-text2); }
+.set-row > ha-icon { color: var(--fm-text2); transition: transform .25s ease; }
+.acc { border-bottom: 1px solid var(--fm-divider); }
+.acc:last-child { border-bottom: 0; }
+.acc .set-row { border-bottom: 0; }
+.acc.open > .set-row > ha-icon { transform: rotate(180deg); }
+.acc-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .3s ease; }
+.acc.open > .acc-body { grid-template-rows: 1fr; }
+.acc-body > .inner { overflow: hidden; min-height: 0; }
+.acc:not(.open) > .acc-body > .inner { visibility: hidden; transition: visibility 0s .3s; }
+.acc-content { padding: 2px 14px 16px; }
+.acc-content > .set-sec:first-child { margin-top: 4px; }
 .save-state { font-size: 13px; color: var(--fm-text2); display: inline-flex; align-items: center; gap: 4px; padding-right: 8px; white-space: nowrap; }
 .save-state.saved { color: var(--fm-success, #2e9e5b); }
 .save-state.error { color: var(--fm-error); }
@@ -781,6 +800,9 @@ select.keep.danger { border-color: var(--fm-error); color: var(--fm-error); font
   animation: up .2s ease-out;
 }
 #overlay.same .sheet { animation: none; }
+/* Une fenêtre ouverte par-dessus une autre : le fond reste opaque, seul le contenu apparaît (on ne voit plus l'onglet dessous). */
+#overlay.stacked:not(.same) .sheet { animation: none; }
+#overlay.stacked:not(.same) .sheet > .body, #overlay.stacked:not(.same) .sheet > .footer { animation: up .22s ease; }
 @keyframes up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 .sheet .toolbar { background: var(--fm-card); color: var(--fm-text); border-bottom: 1px solid var(--fm-divider); }
 .sheet .body { flex: 1; overflow-y: auto; }
@@ -881,7 +903,7 @@ class FrigoMalinPanel extends HTMLElement {
     this.s = {
       tab: "home",
       config: null,
-      home: { entries: [], loaded: false },
+      home: { entries: [], loaded: false, quick: false },
       recipes: [],
       loaded: false,
       search: "",
@@ -1123,8 +1145,7 @@ class FrigoMalinPanel extends HTMLElement {
     const editingInput = root.querySelector(".li-edit");
     if (list && !(editingInput && this.s.list.editing && root.activeElement === editingInput)) list.innerHTML = this._tplShopList();
     root.querySelectorAll(".quick-sugg").forEach((el) => (el.innerHTML = this._tplQuickChips()));
-    const count = root.getElementById("quick-count");
-    if (count) count.innerHTML = this._tplQuickCount();
+    root.querySelectorAll(".quick-count").forEach((el) => (el.innerHTML = this._tplQuickCount()));
     const home = root.getElementById("home-shopping");
     if (home) home.innerHTML = this._tplHomeShopping();
   }
@@ -1284,6 +1305,7 @@ class FrigoMalinPanel extends HTMLElement {
       this._dispatch(ev.target.dataset.enter, ev.target, ev);
     }
     if (ev.key === "Escape" && this._confirmResolve) return this._closeDialog(null);
+    if (ev.key === "Escape" && this.s.home.quick) return this._setHomeQuick(false);
     if (ev.key === "Escape" && this.s.list.editing) {
       this.s.list.editing = null;
       this._renderListParts();
@@ -1535,7 +1557,9 @@ class FrigoMalinPanel extends HTMLElement {
       ev.preventDefault();
       return;
     }
-    const el = ev.composedPath().find((n) => n.dataset && n.dataset.action);
+    const path = ev.composedPath();
+    if (this.s.home.quick && !path.some((n) => n.id === "home-quick" || n.id === "home-quick-tile")) this._setHomeQuick(false);
+    const el = path.find((n) => n.dataset && n.dataset.action);
     // Une recette ouverte par glissement se referme au lieu de s'ouvrir.
     if (this._openSwipe && el && el.dataset.action === "open-recipe") {
       ev.preventDefault();
@@ -1561,6 +1585,7 @@ class FrigoMalinPanel extends HTMLElement {
         return;
       case "tab":
         s.tab = d.tab;
+        s.home.quick = false;
         if (s.tab === "home") this._loadHome();
         if (s.tab === "week") this._loadWeek();
         if (s.tab === "shopping") {
@@ -1591,6 +1616,9 @@ class FrigoMalinPanel extends HTMLElement {
         this._renderOverlay();
         return;
       }
+      case "home-quick":
+        this._setHomeQuick(!s.home.quick);
+        return;
       case "home-go":
         if (d.store) this._pickStore(d.store);
         if (d.view) s.recipesView = d.view;
@@ -1706,11 +1734,27 @@ class FrigoMalinPanel extends HTMLElement {
         this.top.draft.servings = d.value ? Number(d.value) : null;
         this._renderOverlay();
         return;
-      case "settings-page":
-        // Même brouillon que le menu : les résumés suivent les changements.
-        s.stack.push({ type: "settings-page", page: d.page, draft: this.top.draft });
-        this._renderOverlay();
+      case "settings-acc": {
+        // Accordéon : une seule section ouverte à la fois, dépliée sur place.
+        const top = this.top;
+        top.open = top.open === d.page ? null : d.page;
+        const root = this.shadowRoot;
+        root.querySelectorAll("#overlay .acc").forEach((acc) => {
+          const open = acc.dataset.acc === top.open;
+          acc.classList.toggle("open", open);
+          acc.querySelector(".set-row").setAttribute("aria-expanded", String(open));
+        });
+        if (top.open) {
+          const acc = root.querySelector(`#overlay .acc[data-acc="${top.open}"]`);
+          const body = root.querySelector("#overlay .sheet .body");
+          setTimeout(() => {
+            if (!acc || !body) return;
+            const delta = acc.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
+            body.scrollBy({ top: delta, behavior: "smooth" });
+          }, 320);
+        }
         return;
+      }
       case "toggle-in": {
         const list = this._getPath(d.path) || [];
         const i = list.indexOf(d.value);
@@ -1818,7 +1862,7 @@ class FrigoMalinPanel extends HTMLElement {
         this._applyCopy();
         return;
       case "weekplan-open":
-        this._openWeekPlan();
+        this._openWeekPlan(d.rolling === "1");
         return;
       case "weekplan-slot": {
         const key = `${d.date}|${d.slot}`;
@@ -2295,29 +2339,32 @@ class FrigoMalinPanel extends HTMLElement {
     this._renderOverlay();
   }
 
-  async _openWeekPlan() {
+  /* rolling : les 7 prochains jours à partir d'aujourd'hui (depuis l'accueil) au lieu de la semaine du lundi. */
+  async _openWeekPlan(rolling = false) {
     const settings = this.settings;
     const today = todayIso();
-    // Si la semaine affichée est déjà bien entamée (à partir de vendredi), on propose la suivante.
     let start = this.s.week.start;
-    if (addDays(start, 4) < today) start = addDays(start, 7);
-    let entries = this.s.week.entries;
-    if (start !== this.s.week.start) {
-      try {
-        entries = (await this._ws("plan/list", { start, end: addDays(start, 6) })).entries;
-      } catch (_) {
-        entries = [];
-      }
+    if (rolling) start = today;
+    // Si la semaine affichée est déjà bien entamée (à partir de vendredi), on propose la suivante.
+    else if (addDays(start, 4) < today) start = addDays(start, 7);
+    // Toujours relire le menu : l'onglet Semaine n'a peut-être pas encore été ouvert.
+    let entries = [];
+    try {
+      entries = (await this._ws("plan/list", { start, end: addDays(start, 6) })).entries;
+    } catch (_) {
+      entries = start === this.s.week.start ? this.s.week.entries : [];
     }
     const taken = new Set(entries.map((e) => `${e.date}|${e.slot}`));
+    // Le midi d'aujourd'hui est passé l'après-midi : on ne le propose pas.
+    const lunchGone = new Date().getHours() >= 14;
     const slots = {};
     for (let i = 0; i < 7; i++) {
       const date = addDays(start, i);
-      const weekend = i >= 5;
+      const weekend = [0, 6].includes(parseIso(date).getDay());
       for (const slot of ["lunch", "dinner"]) {
         const key = `${date}|${slot}`;
         const wanted = settings.plan_slots[`${slot}_${weekend ? "weekend" : "weekday"}`];
-        slots[key] = Boolean(wanted) && date >= today && !taken.has(key);
+        slots[key] = Boolean(wanted) && date >= today && !taken.has(key) && !(date === today && slot === "lunch" && lunchGone);
       }
     }
     this.s.stack.push({
@@ -2441,8 +2488,9 @@ class FrigoMalinPanel extends HTMLElement {
       const list = await this._ws("recipes/list");
       this.s.recipes = list.recipes;
       this.s.stack.pop();
-      this.s.week.start = top.start;
+      this.s.week.start = mondayOf(parseIso(top.start));
       this.s.tab = "week";
+      this._loadHome();
       await this._loadWeek();
       let msg = `${res.entries.length} repas ajoutés au menu`;
       if (res.added && res.added.length) msg += ` · ${res.added.length} ingrédients dans « ${res.list_name} »`;
@@ -2617,6 +2665,25 @@ class FrigoMalinPanel extends HTMLElement {
       .sort((a, b) => a.date.localeCompare(b.date) || order[a.slot] - order[b.slot]);
   }
 
+  /* Repas habituels (réglages) encore libres dans les 7 prochains jours. */
+  _freeSlots() {
+    const today = todayIso();
+    const lunchGone = new Date().getHours() >= 14;
+    const wanted = this.settings.plan_slots || {};
+    const taken = new Set(this.s.home.entries.map((e) => `${e.date}|${e.slot}`));
+    const free = [];
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(today, i);
+      const weekend = [0, 6].includes(parseIso(date).getDay());
+      for (const slot of ["lunch", "dinner"]) {
+        if (!wanted[`${slot}_${weekend ? "weekend" : "weekday"}`]) continue;
+        if (date === today && slot === "lunch" && lunchGone) continue;
+        if (!taken.has(`${date}|${slot}`)) free.push({ date, slot });
+      }
+    }
+    return free;
+  }
+
   _mealWhen(e) {
     const today = todayIso();
     const slot = e.slot === "lunch" ? "midi" : "soir";
@@ -2785,11 +2852,13 @@ class FrigoMalinPanel extends HTMLElement {
     if (!id) return;
     const r = this._recipe(id);
     const hour = new Date().getHours();
+    // Le premier repas habituel encore libre, sinon aujourd'hui.
+    const free = this._freeSlots()[0];
     this.s.stack.push({
       type: "plan",
       id,
-      date: todayIso(),
-      slot: hour < 14 ? "lunch" : "dinner",
+      date: free ? free.date : todayIso(),
+      slot: free ? free.slot : hour < 14 ? "lunch" : "dinner",
       servings: this.top.servings || r.servings || 4,
     });
     this._renderOverlay();
@@ -2797,6 +2866,7 @@ class FrigoMalinPanel extends HTMLElement {
 
   async _planConfirm() {
     const top = this.top;
+    setTimeout(() => this._loadHome(), 800);
     try {
       const res = await this._ws("plan/add", {
         date: top.date,
@@ -3154,6 +3224,7 @@ class FrigoMalinPanel extends HTMLElement {
     // L'animation ne joue qu'à l'ouverture d'une nouvelle fenêtre, pas au retour en arrière.
     const prevDepth = Number(host.dataset.depth || 0);
     host.classList.toggle("same", this.s.stack.length <= prevDepth);
+    host.classList.toggle("stacked", this.s.stack.length > 1);
     host.dataset.depth = String(this.s.stack.length);
     host.innerHTML = top ? this._tplOverlay(top) : "";
     host.dataset.key = key;
@@ -3240,15 +3311,25 @@ class FrigoMalinPanel extends HTMLElement {
   _tplHome() {
     const hour = new Date().getHours();
     const hello = hour < 5 ? "Bonne nuit" : hour < 12 ? "Bonjour" : hour < 18 ? "Bon après-midi" : "Bonsoir";
+    const user = this._hass && this._hass.user && this._hass.user.name;
+    const first = user ? cap(String(user).trim().split(/\s+/)[0]) : "";
     const upcoming = this._upcomingMeals();
     const next = upcoming[0];
     const r = next && this._recipe(next.recipe_id);
     const later = upcoming.slice(1, 6);
+    const free = this.s.home.loaded ? this._freeSlots() : [];
+    const freeNames = free.map((x) => this._mealWhen(x).toLowerCase());
+    const freeBlock = free.length
+      ? `<div class="home-free">
+          <div>📅 <b>Pas encore de repas</b> : ${esc(freeNames.slice(0, 4).join(", "))}${free.length > 4 ? ` et ${free.length - 4} autre${free.length - 4 > 1 ? "s" : ""}` : ""}.</div>
+          <button class="btn tonal block" data-action="weekplan-open" data-rolling="1">${icon("creation")} Planifier ${free.length > 1 ? `ces ${free.length} repas` : "ce repas"} avec l'IA</button>
+        </div>`
+      : "";
 
     const tiles = [
       ["camera-outline", COLORS.teal, "Photo du frigo", `data-action="pick-photo" data-input="home-cam"`],
-      ["creation", COLORS.indigo, "Planifier la semaine", `data-action="weekplan-open"`],
-      ["cart-plus", COLORS.green, "Ajouter aux courses", this.listEntity ? `data-action="quick-open"` : `data-action="home-go" data-tab="shopping"`],
+      ["creation", COLORS.indigo, "Planifier la semaine", `data-action="weekplan-open" data-rolling="1"`],
+      ["cart-plus", COLORS.green, "Ajout rapide", this.listEntity ? `data-action="home-quick" id="home-quick-tile"` : `data-action="home-go" data-tab="shopping"`],
       ["bookshelf", COLORS.orange, "Bibliothèque", `data-action="home-go" data-tab="recipes" data-view="library"`],
     ];
 
@@ -3256,7 +3337,7 @@ class FrigoMalinPanel extends HTMLElement {
       ? `<div class="home-next">
           ${r ? this._tplThumb(r) : `<div class="thumb">🍽️</div>`}
           <div class="grow">
-            <div class="when">${esc(this._mealWhen(next))}</div>
+            <div class="when">${esc(this._mealWhen(next))}<span class="date"> · ${esc(fmtDay(next.date, { weekday: "short", day: "numeric", month: "short" }))}</span></div>
             <div class="what">${esc(r ? r.title : "Recette supprimée")}</div>
             <div class="muted small">${r && (r.prep_time || r.cook_time) ? `⏱️ ${(r.prep_time || 0) + (r.cook_time || 0)} min · ` : ""}👥 ${next.servings} pers.</div>
           </div>
@@ -3272,10 +3353,11 @@ class FrigoMalinPanel extends HTMLElement {
                 return `<button class="home-line" data-action="meal-open" data-id="${esc(e.id)}"><span class="d">${esc(this._mealWhen(e))}</span><span class="t">${lr ? emojiFor(lr.title) + " " + esc(lr.title) : "Recette supprimée"}</span>${icon("chevron-right")}</button>`;
               })
               .join("")}</div>`
-          : ""}`
+          : ""}
+        ${freeBlock}`
       : `<p class="muted" style="margin:4px 0 12px">Rien de prévu pour les prochains jours.</p>
         <div class="row" style="gap:8px">
-          <button class="btn grow" data-action="weekplan-open">${icon("creation")} Planifier avec l'IA</button>
+          <button class="btn grow" data-action="weekplan-open" data-rolling="1">${icon("creation")} Planifier avec l'IA</button>
           <button class="btn tonal grow" data-action="home-go" data-tab="week">${icon("plus")} Choisir</button>
         </div>`;
 
@@ -3292,10 +3374,11 @@ class FrigoMalinPanel extends HTMLElement {
 
     return `
       <input class="hidden-input" id="home-cam" type="file" accept="image/*" capture="environment" data-change="photo">
-      <div class="home-hello"><h2>${hello} 👋</h2><div class="muted">${esc(cap(fmtDay(todayIso())))}</div></div>
+      <div class="home-hello"><h2>${hello}${first ? ` ${esc(first)}` : ""} 👋</h2><div class="muted">${esc(cap(fmtDay(todayIso())))}</div></div>
       <div class="home-tiles">${tiles
-        .map(([ic, color, label, attrs]) => `<button class="home-tile" ${attrs}>${bubble(ic, color)}<span>${label}</span></button>`)
+        .map(([ic, color, label, attrs]) => `<button class="home-tile ${attrs.includes("home-quick") && this.s.home.quick ? "on" : ""}" ${attrs}>${bubble(ic, color)}<span>${label}</span></button>`)
         .join("")}</div>
+      ${this.listEntity ? this._tplHomeQuick() : ""}
       <div class="card">
         <div class="home-head">${bubble("silverware-fork-knife", COLORS.orange)}<h3>Au menu</h3>
           <button class="btn text" data-action="home-go" data-tab="week">Semaine ${icon("chevron-right")}</button></div>
@@ -3308,6 +3391,32 @@ class FrigoMalinPanel extends HTMLElement {
       </div>
       ${this.listEntity ? `<div class="card" id="home-shopping">${this._tplHomeShopping()}</div>` : ""}
       ${this._tplVersion()}`;
+  }
+
+  /* Ajout rapide qui se déplie sous les raccourcis, sans ouvrir de fenêtre. */
+  _tplHomeQuick() {
+    return `<div class="home-quick ${this.s.home.quick ? "open" : ""}" id="home-quick" aria-hidden="${!this.s.home.quick}">
+      <div class="inner"><div class="card">
+        <p class="muted small row quick-count" style="margin:0 0 10px">${this._tplQuickCount()}</p>
+        ${this._tplQuickInput("quick-input-home")}
+        <div class="chips scroll quick-sugg" style="margin-top:10px">${this._tplQuickChips()}</div>
+      </div></div>
+    </div>`;
+  }
+
+  _setHomeQuick(open) {
+    this.s.home.quick = open;
+    const root = this.shadowRoot;
+    const box = root.getElementById("home-quick");
+    if (box) {
+      box.classList.toggle("open", open);
+      box.setAttribute("aria-hidden", String(!open));
+    }
+    root.getElementById("home-quick-tile")?.classList.toggle("on", open);
+    const input = root.getElementById("quick-input-home");
+    // Le focus doit être donné pendant l'appui pour que le clavier de l'iPhone s'ouvre.
+    if (open && input) input.focus({ preventScroll: true });
+    if (!open && input && root.activeElement === input) input.blur();
   }
 
   _tplHomeShopping() {
@@ -3642,21 +3751,25 @@ class FrigoMalinPanel extends HTMLElement {
 
   _tplSettings(top) {
     const d = top.draft;
+    const sections = this._settingsSections(top);
     const body = `
       <p class="muted set-page-intro">Ces informations guident toutes les propositions de l'IA. Les changements sont enregistrés automatiquement.</p>
       <div class="card set-list">${this._settingsThemes(d)
-        .map(([key, ic, color, title, summary]) => `<button class="set-row" data-action="settings-page" data-page="${key}">
-          ${bubble(ic, color)}
-          <div class="grow"><div class="t">${title}</div><div class="m">${esc(summary)}</div></div>
-          ${icon("chevron-right")}
-        </button>`)
+        .map(([key, ic, color, title, summary]) => `<div class="acc ${top.open === key ? "open" : ""}" data-acc="${key}">
+          <button class="set-row" data-action="settings-acc" data-page="${key}" aria-expanded="${top.open === key}">
+            ${bubble(ic, color)}
+            <div class="grow"><div class="t">${title}</div><div class="m">${esc(summary)}</div></div>
+            ${icon("chevron-down")}
+          </button>
+          <div class="acc-body"><div class="inner"><div class="acc-content">${sections[key][1]}</div></div></div>
+        </div>`)
         .join("")}</div>
       <p class="muted small" style="text-align:center">La clé d'IA et le fournisseur se changent dans Paramètres → Appareils et services → Frigo Malin → Configurer.</p>
       ${this._tplVersion()}`;
     return this._tplSheet("Réglages", body, "", this._tplSaveState());
   }
 
-  _tplSettingsPage(top) {
+  _settingsSections(top) {
     const d = top.draft;
     const portions = d.members.reduce((t, m) => t + ({ adult: 1, teen: 1, child: 0.5, toddler: 0.25 })[m.age], 0);
     const zones = Object.keys(this._hass.states).filter((id) => id.startsWith("zone."));
@@ -3756,8 +3869,7 @@ class FrigoMalinPanel extends HTMLElement {
 
 `],
     };
-    const [title, body] = pages[top.page];
-    return this._tplSheet(title, body, "", this._tplSaveState());
+    return pages;
   }
 
   _tplUsage() {
@@ -3876,11 +3988,11 @@ class FrigoMalinPanel extends HTMLElement {
         if (taken.has(key)) return `<span class="chip taken">${slot === "lunch" ? "☀️ Midi" : "🌙 Soir"}</span>`;
         return `<button class="chip ${top.slots[key] ? "on" : ""}" data-action="weekplan-slot" data-date="${date}" data-slot="${slot}" ${past ? "disabled" : ""}>${slot === "lunch" ? "☀️ Midi" : "🌙 Soir"}</button>`;
       };
-      days.push(`<div class="plan-day"><span class="d">${DAY_SHORT[i]} ${parseIso(date).getDate()}</span>${chip("lunch")}${chip("dinner")}</div>`);
+      days.push(`<div class="plan-day"><span class="d">${DAY_SHORT[(parseIso(date).getDay() + 6) % 7]} ${parseIso(date).getDate()}</span>${chip("lunch")}${chip("dinner")}</div>`);
     }
     const hh = this.settings.members.length;
     const body = `
-      <p class="muted" style="margin-top:0">Semaine du ${esc(fmtDay(top.start, { day: "numeric", month: "long" }))}. Choisissez les repas à préparer : l'IA compose un menu équilibré, de saison, adapté à votre foyer et à votre temps.</p>
+      <p class="muted" style="margin-top:0">Du ${esc(fmtDay(top.start, { weekday: "long", day: "numeric" }))} au ${esc(fmtDay(addDays(top.start, 6), { weekday: "long", day: "numeric", month: "long" }))}. Choisissez les repas à préparer : l'IA compose un menu équilibré, de saison, adapté à votre foyer et à votre temps.</p>
       ${top.error ? `<div class="alert">${esc(top.error)}</div>` : ""}
       <div class="card" style="padding:6px 14px">${days.join("")}</div>
       <div class="row wrap" style="justify-content:space-between;margin:14px 0">
@@ -3939,7 +4051,7 @@ class FrigoMalinPanel extends HTMLElement {
 
   _tplQuickSheet() {
     const body = `
-      <p class="muted small row" id="quick-count" style="margin-top:0">${this._tplQuickCount()}</p>
+      <p class="muted small row quick-count" style="margin-top:0">${this._tplQuickCount()}</p>
       ${this._tplQuickInput("quick-input-sheet")}
       <p class="muted small" style="margin:14px 0 8px">Vos habitués — un appui suffit :</p>
       <div class="chips quick-sugg">${this._tplQuickChips()}</div>
@@ -4322,8 +4434,6 @@ class FrigoMalinPanel extends HTMLElement {
         return this._tplQuickSheet();
       case "settings":
         return this._tplSettings(top);
-      case "settings-page":
-        return this._tplSettingsPage(top);
       case "member":
         return this._tplMember(top);
       case "store":
