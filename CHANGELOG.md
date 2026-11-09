@@ -7,6 +7,30 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.8.0] – 2026-11-09
+
+### Ajouté
+
+- 🧊 **Frigo qui se souvient** : la dernière photo du frigo est gardée en mémoire. L'onglet Frigo affiche ce qu'il reste, avec les aliments **à consommer vite** en premier, et le bouton « 💡 Des idées avec ce qu'il me reste » propose des recettes sans reprendre de photo.
+  - L'IA estime combien de temps chaque aliment se garde ; la date se corrige d'un geste dans la liste (⏳ 2 j, ⚠️ demain…).
+  - Les recettes proposées utilisent en priorité ce qui va se perdre.
+  - Une nouvelle photo demande s'il faut **compléter** (frigo + placard) ou **remplacer** le contenu mémorisé.
+  - À la fin du mode cuisine, les ingrédients utilisés sont retirés du frigo.
+  - Réglages : durée de la mémoire (3 jours, 5 jours, 1 semaine, 2 semaines ou jusqu'à la prochaine photo) et bouton « Oublier le contenu du frigo ».
+- 🤖 **Un modèle d'IA adapté à chaque tâche** (mode économique, activé par défaut) : un modèle rapide et peu cher pour lire une photo du frigo ou trouver des idées, un modèle intermédiaire pour importer une recette, et le plus puissant pour le menu de la semaine et les photos de livres. Les réglages affichent la **dépense estimée du mois**. Le mode « un seul modèle » reste disponible.
+- 📅 **Menu de la semaine plus rapide** : l'IA propose d'abord le menu (titres et idées) en quelques secondes ; les recettes complètes ne sont écrites qu'à la validation, en parallèle.
+  - **Remplacer un seul repas** du menu proposé sans tout relancer.
+  - **Garder des repas** (cadenas) et relancer le reste.
+- 🗓️ **Semaine** :
+  - **Déplacer un repas** : appui long puis glisser vers un autre jour. Si la place est prise, les deux repas sont échangés.
+  - **Reprendre un menu** d'une semaine passée : on choisit les repas à recopier, et leurs ingrédients sont ajoutés aux courses.
+
+### Corrigé
+
+- La recherche de recettes ignore les accents (« creme » trouve « crème »).
+- Retirer un repas du menu propose aussi de retirer ses ingrédients de la liste de courses (sans toucher à ce qui sert à d'autres repas).
+- Les releases GitHub sont créées automatiquement à chaque nouvelle version, pour que HACS propose la mise à jour.
+
 ## [1.7.1] – 2026-11-09
 
 ### Modifié
