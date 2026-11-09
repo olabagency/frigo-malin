@@ -138,12 +138,27 @@ class FrigoStore:
                 "place": raw.get("place") if raw.get("place") in ("etagere", "bac", "porte", "congelateur", "placard") else None,
                 "shelf": _int(raw.get("shelf")),
             }
-        self.fridge = {"items": list(by_key.values())[:150], "updated": dt_util.utcnow().isoformat()}
+        self.fridge = {
+            "items": list(by_key.values())[:150],
+            "updated": dt_util.utcnow().isoformat(),
+            # Photos du frigo (noms de fichiers), gardées tant que le contenu est mémorisé.
+            "photos": self.fridge.get("photos", []),
+        }
         self._save()
         return self.fridge_items()
 
-    def clear_fridge(self) -> None:
-        self.fridge = {"items": [], "updated": None}
+    def clear_fridge(self) -> list[str]:
+        """Oublie le frigo. Renvoie les photos à supprimer."""
+        photos = self.fridge.get("photos", [])
+        self.fridge = {"items": [], "updated": None, "photos": []}
+        self._save()
+        return photos
+
+    def fridge_photos(self) -> list[str]:
+        return self.fridge.get("photos", []) if self.fridge_items() else []
+
+    def set_fridge_photos(self, photos: list[str]) -> None:
+        self.fridge["photos"] = photos
         self._save()
 
     def consume_fridge(self, names: list[str]) -> list[str]:

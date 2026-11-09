@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.13.0";
+const FM_VERSION = "1.14.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -748,6 +748,16 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .save-state.saved { color: var(--fm-success, #2e9e5b); }
 .save-state.error { color: var(--fm-error); }
 .set-page-intro { margin-top: 0; }
+
+/* Frigo dessiné : modification et photo */
+.chip.removable { border-style: dashed; }
+.chip.removable ha-icon { --mdc-icon-size: 16px; color: var(--fm-error); margin-left: 2px; }
+.fz-add { display: flex; gap: 6px; align-items: center; margin: 0 0 12px; }
+.fz-add .input { min-width: 0; flex: 1 1 auto; }
+.fz-add select.input { flex: 0 0 112px; width: 112px; padding: 0 4px 0 10px; }
+.linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--fm-primary); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.icon-btn.on { color: var(--fm-primary); background: var(--fm-soft); }
+.fridge-photo { width: 100%; border-radius: 16px; display: block; }
 
 /* Frigo dessiné */
 .fridge-box { margin: 12px 0; border: 2px solid var(--fm-divider); border-radius: 18px; overflow: hidden; background: color-mix(in srgb, #22b8a7 4%, var(--fm-card)); }
@@ -1717,6 +1727,34 @@ class FrigoMalinPanel extends HTMLElement {
         if (d.view === "library") this._loadLibrary();
         this._dispatch("tab", { dataset: { tab: d.tab } });
         return;
+      case "memory-photo":
+        this._showFridgePhoto(d.i != null ? Number(d.i) : null);
+        return;
+      case "memory-edit":
+        s.fridgeEdit = !s.fridgeEdit;
+        this._render();
+        if (s.fridgeEdit) this.shadowRoot.getElementById("memory-new")?.focus({ preventScroll: true });
+        return;
+      case "memory-remove": {
+        const items = s.fridgeMemory.items.filter((i) => i.name !== d.name);
+        s.fridgeMemory.items = items;
+        this._render();
+        this._saveFridgeItems(items);
+        return;
+      }
+      case "memory-add": {
+        const names = String(s.fridgeNew || "").split(/[,;\n]/).map((n) => n.trim()).filter(Boolean);
+        if (!names.length) return;
+        const place = s.fridgeNewPlace || "etagere";
+        const known = new Set(s.fridgeMemory.items.map((i) => foldText(i.name)));
+        const added = names.filter((n) => !known.has(foldText(n))).map((name) => ({ name, amount: "", expires: null, place, shelf: null }));
+        s.fridgeNew = "";
+        s.fridgeMemory.items = [...s.fridgeMemory.items, ...added];
+        this._render();
+        this.shadowRoot.getElementById("memory-new")?.focus({ preventScroll: true });
+        this._saveFridgeItems(s.fridgeMemory.items);
+        return;
+      }
       case "memory-use":
         this._useFridgeMemory();
         return;
@@ -1724,6 +1762,7 @@ class FrigoMalinPanel extends HTMLElement {
         const ok = await this._confirm({ title: "Oublier le frigo ?", message: "Les aliments mémorisés seront effacés. Vous pourrez reprendre une photo.", confirm: "Oublier" });
         if (!ok) return;
         this.s.fridgeMemory = await this._ws("fridge/memory/clear");
+        s.fridgeEdit = false;
         if (s.fridge.fromMemory) s.fridge = this._freshFridge();
         this._toast("🧊 Frigo oublié");
         this._render();
@@ -2990,7 +3029,7 @@ class FrigoMalinPanel extends HTMLElement {
         }
         if (mode) {
           const keep = f.fromMemory || mode === "merge" ? [] : f.ingredients.filter((i) => !i.expires);
-          const memory = await this._ws("fridge/memory/save", { items: res.ingredients, mode });
+          const memory = await this._ws("fridge/memory/save", { items: res.ingredients, mode, photo: f.photo ? f.photo.split(",")[1] : undefined });
           this.s.fridgeMemory = memory;
           const names = new Set(memory.items.map((i) => foldText(i.name)));
           f.ingredients = [...memory.items.map((i) => ({ ...i })), ...keep.filter((i) => !names.has(foldText(i.name)))];
@@ -4290,11 +4329,15 @@ class FrigoMalinPanel extends HTMLElement {
     </select>`;
   }
 
-  _tplFridgeDrawing(items) {
+  _tplFridgeDrawing(items, edit = false) {
     const { body, door, extra } = fridgeSections(items);
     const chips = (list) =>
       `<div class="chips">${list
-        .map((i) => `<span class="chip ${i.expires && daysLeft(i.expires) <= 2 ? "urgent-chip" : ""}">${ingEmoji(i.name)} ${esc(i.name)}</span>`)
+        .map((i) =>
+          edit
+            ? `<button class="chip removable" data-action="memory-remove" data-name="${esc(i.name)}" aria-label="Retirer ${esc(i.name)}">${ingEmoji(i.name)} ${esc(i.name)} ${icon("close")}</button>`
+            : `<span class="chip ${i.expires && daysLeft(i.expires) <= 2 ? "urgent-chip" : ""}">${ingEmoji(i.name)} ${esc(i.name)}</span>`
+        )
         .join("")}</div>`;
     const section = (sec) => `<div class="fz-shelf fz-${sec.key.startsWith("shelf") ? "etagere" : sec.key}"><div class="fz-label">${sec.label}</div>${chips(sec.items)}</div>`;
     return `<div class="fridge-box">
@@ -4302,6 +4345,52 @@ class FrigoMalinPanel extends HTMLElement {
       ${door.length ? `<div class="fz-door"><div class="fz-label">🚪 Porte</div>${chips(door)}</div>` : ""}
     </div>
     ${extra.map((sec) => `<div class="fridge-box fz-extra">${section(sec)}</div>`).join("")}`;
+  }
+
+  _tplFridgeAdd() {
+    const places = [["etagere", "🧊 Étagère"], ["bac", "🥬 Bac"], ["porte", "🚪 Porte"], ["congelateur", "❄️ Congél."], ["placard", "🗄️ Placard"]];
+    return `<div class="fz-add">
+      <input class="input" id="memory-new" placeholder="Ajouter un aliment" value="${esc(this.s.fridgeNew || "")}" data-model="fridgeNew" data-enter="memory-add" enterkeyhint="done" autocomplete="off">
+      <select class="input" data-model="fridgeNewPlace" aria-label="Où ?">
+        ${places.map(([v, label]) => `<option value="${v}" ${(this.s.fridgeNewPlace || "etagere") === v ? "selected" : ""}>${label}</option>`).join("")}
+      </select>
+      <button class="btn" data-action="memory-add" aria-label="Ajouter">${icon("plus")}</button>
+    </div>`;
+  }
+
+  /* Enregistre le contenu modifié à la main (photos gardées). */
+  async _saveFridgeItems(items) {
+    try {
+      this.s.fridgeMemory = await this._ws("fridge/memory/save", { items, mode: "replace" });
+    } catch (err) {
+      this._toast(this._err(err), true);
+    }
+    this._render();
+  }
+
+  async _showFridgePhoto(index = null) {
+    const count = this.s.fridgeMemory.photos || 0;
+    if (!count) return;
+    const i = index == null ? count - 1 : index;
+    const top = { type: "fridge-photo", index: i, count, image: null };
+    if (this.top && this.top.type === "fridge-photo") this.s.stack[this.s.stack.length - 1] = top;
+    else this.s.stack.push(top);
+    this._renderOverlay();
+    try {
+      const res = await this._ws("fridge/memory/photo", { index: i });
+      top.image = `data:${res.mime};base64,${res.image}`;
+    } catch (err) {
+      top.error = this._err(err);
+    }
+    if (this.top === top) this._renderOverlay();
+  }
+
+  _tplFridgePhoto(top) {
+    const body = `
+      ${top.count > 1 ? `<div class="segmented" style="margin-bottom:12px">${Array.from({ length: top.count }, (_, i) => `<button class="${i === top.index ? "on" : ""}" data-action="memory-photo" data-i="${i}">Photo ${i + 1}</button>`).join("")}</div>` : ""}
+      ${top.error ? `<div class="alert">${esc(top.error)}</div>` : top.image ? `<img class="fridge-photo" src="${top.image}" alt="Photo du frigo">` : `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`}
+      <p class="muted small">La photo est gardée tant que le contenu du frigo est mémorisé ; elle est effacée avec « Oublier ».</p>`;
+    return this._tplSheet("Photo du frigo", body);
   }
 
   _tplFridgeMemory() {
@@ -4315,15 +4404,17 @@ class FrigoMalinPanel extends HTMLElement {
         ${bubble("fridge-outline", COLORS.teal)}
         <div class="grow">
           <h3 style="margin:0">Dans mon frigo</h3>
-          <div class="muted small">${mem.items.length} aliment${mem.items.length > 1 ? "s" : ""} · photo ${when}${mem.days ? ` · gardé ${mem.days} jours` : ""}</div>
+          <div class="muted small">${mem.items.length} aliment${mem.items.length > 1 ? "s" : ""} · ${mem.photos ? `<button class="linkish" data-action="memory-photo">📷 photo ${when}</button>` : `photo ${when}`}${mem.days ? ` · gardé ${mem.days} jours` : ""}</div>
         </div>
+        <button class="icon-btn ${this.s.fridgeEdit ? "on" : ""}" data-action="memory-edit" aria-label="Modifier le contenu" title="Modifier">${icon(this.s.fridgeEdit ? "check" : "pencil-outline")}</button>
         <button class="icon-btn" data-action="memory-clear" aria-label="Oublier le contenu du frigo" title="Oublier">${icon("delete-outline")}</button>
       </div>
       ${urgent.length
         ? `<div class="urgent">⚠️ À consommer vite : ${urgent.map((i) => `<b>${esc(i.name)}</b> (${esc(expiryLabel(i.expires).replace(/^⚠️ |^⏳ /, ""))})`).join(", ")}</div>`
         : `<div class="muted small" style="margin:8px 0 0">✅ Rien ne presse pour l'instant.</div>`}
-      ${this._tplFridgeDrawing(mem.items)}
-      <button class="btn block big" data-action="memory-use">💡 Des idées avec ce qu'il me reste</button>
+      ${this._tplFridgeDrawing(mem.items, this.s.fridgeEdit)}
+      ${this.s.fridgeEdit ? this._tplFridgeAdd() : ""}
+      <button class="btn block big" data-action="${this.s.fridgeEdit ? "memory-edit" : "memory-use"}">${this.s.fridgeEdit ? `${icon("check")} Terminé` : "💡 Des idées avec ce qu'il me reste"}</button>
     </div>`;
   }
 
@@ -4688,6 +4779,8 @@ class FrigoMalinPanel extends HTMLElement {
         return this._tplEditor(top);
       case "import":
         return this._tplImport(top);
+      case "fridge-photo":
+        return this._tplFridgePhoto(top);
       case "plan":
         return this._tplPlan(top);
       case "pick":

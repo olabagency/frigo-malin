@@ -7,6 +7,19 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.14.0] – 2026-11-09
+
+### Ajouté
+
+- 📷 **Photo du frigo** : la photo prise pour l'analyse est gardée tant que le contenu est mémorisé.
+  - Un appui sur « 📷 photo aujourd'hui » l'affiche.
+  - En mode « Compléter » (frigo + placard), jusqu'à 3 photos sont gardées.
+  - Elles sont effacées avec « Oublier ».
+- ✏️ **Modifier le contenu du frigo** : le crayon de « Dans mon frigo » passe en mode édition.
+  - Un appui sur un aliment le retire.
+  - Le champ du bas ajoute un ou plusieurs aliments (séparés par des virgules) à l'endroit choisi : étagère, bac, porte, congélateur ou placard.
+  - Tout est enregistré tout de suite, et la photo est conservée.
+
 ## [1.13.0] – 2026-11-09
 
 ### Ajouté

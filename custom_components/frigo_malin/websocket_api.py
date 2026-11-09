@@ -7,7 +7,9 @@ import base64
 import binascii
 import logging
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import voluptuous as vol
 
@@ -219,6 +221,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_library_ideas,
         ws_nutrition_complete,
         ws_jow_search,
+        ws_fridge_memory_photo,
         ws_timer_start,
         ws_timer_cancel,
         ws_fridge_memory,
@@ -397,7 +400,32 @@ async def ws_fridge_suggest(
 
 
 def _fridge_result(data: FrigoData) -> dict[str, Any]:
-    return {"items": data.store.fridge_items(), "updated": data.store.fridge.get("updated"), "days": data.store.settings.get("fridge_days", 5)}
+    return {
+        "items": data.store.fridge_items(),
+        "updated": data.store.fridge.get("updated"),
+        "days": data.store.settings.get("fridge_days", 5),
+        "photos": len(data.store.fridge_photos()),
+    }
+
+
+MAX_FRIDGE_PHOTOS = 3
+
+
+def _photo_dir(hass: HomeAssistant) -> Path:
+    return Path(hass.config.path(".storage", "frigo_malin_photos"))
+
+
+def _write_photo(folder: Path, name: str, content: bytes) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / name).write_bytes(content)
+
+
+def _delete_photos(folder: Path, names: list[str]) -> None:
+    for name in names:
+        try:
+            (folder / Path(name).name).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 @websocket_api.websocket_command({vol.Required("type"): "frigo_malin/fridge/memory"})
@@ -411,20 +439,55 @@ def ws_fridge_memory(hass: HomeAssistant, connection: websocket_api.ActiveConnec
         vol.Required("type"): "frigo_malin/fridge/memory/save",
         vol.Required("items"): [dict],
         vol.Optional("mode", default="replace"): vol.In(["replace", "merge"]),
+        # Photo de la nouvelle prise de vue (base64 JPEG) : remplace ou s'ajoute aux précédentes.
+        vol.Optional("photo"): str,
     }
 )
-@callback
-def ws_fridge_memory_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+@websocket_api.async_response
+async def ws_fridge_memory_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     data = _data(hass)
     data.store.save_fridge(msg["items"], msg["mode"])
+    if msg.get("photo"):
+        try:
+            content = base64.b64decode(_decode_image(msg["photo"]))
+        except vol.Invalid as err:
+            connection.send_error(msg["id"], "invalid_format", str(err))
+            return
+        folder = _photo_dir(hass)
+        name = f"{uuid4().hex}.jpg"
+        await hass.async_add_executor_job(_write_photo, folder, name, content)
+        old = data.store.fridge.get("photos", [])
+        photos = [*old, name][-MAX_FRIDGE_PHOTOS:] if msg["mode"] == "merge" else [name]
+        data.store.set_fridge_photos(photos)
+        await hass.async_add_executor_job(_delete_photos, folder, [p for p in old if p not in photos])
     connection.send_result(msg["id"], _fridge_result(data))
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "frigo_malin/fridge/memory/photo", vol.Optional("index", default=0): int}
+)
+@websocket_api.async_response
+async def ws_fridge_memory_photo(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Une photo du frigo mémorisé, en base64 (la plus récente en dernier)."""
+    photos = _data(hass).store.fridge_photos()
+    if not 0 <= msg["index"] < len(photos):
+        connection.send_error(msg["id"], "not_found", "Pas de photo du frigo")
+        return
+    path = _photo_dir(hass) / Path(photos[msg["index"]]).name
+    try:
+        content = await hass.async_add_executor_job(path.read_bytes)
+    except OSError:
+        connection.send_error(msg["id"], "not_found", "Photo introuvable")
+        return
+    connection.send_result(msg["id"], {"image": base64.b64encode(content).decode(), "mime": "image/jpeg", "count": len(photos)})
 
 
 @websocket_api.websocket_command({vol.Required("type"): "frigo_malin/fridge/memory/clear"})
 @callback
 def ws_fridge_memory_clear(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     data = _data(hass)
-    data.store.clear_fridge()
+    photos = data.store.clear_fridge()
+    hass.async_add_executor_job(_delete_photos, _photo_dir(hass), photos)
     connection.send_result(msg["id"], _fridge_result(data))
 
 

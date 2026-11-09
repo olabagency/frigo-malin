@@ -734,3 +734,30 @@ async def test_nutrition_is_attached_and_completed(hass: HomeAssistant, hass_ws_
     assert bowl["nutrition"]["kcal"] == 350 + 39 and bowl["nutrition"]["ai"]
     library = (await ws("library/list"))["result"]["recipes"]
     assert all("nutrition" in r for r in library)
+
+
+async def test_fridge_photo_is_kept(hass: HomeAssistant, hass_ws_client) -> None:
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    saved = (await ws("fridge/memory/save", items=[{"name": "lait"}], mode="replace", photo="data:image/jpeg;base64,aGVsbG8="))["result"]
+    assert saved["photos"] == 1
+    photo = (await ws("fridge/memory/photo", index=0))["result"]
+    assert photo["image"] == "aGVsbG8=" and photo["count"] == 1
+
+    # Compléter avec une 2e photo (placard) : les deux sont gardées.
+    merged = (await ws("fridge/memory/save", items=[{"name": "pâtes"}], mode="merge", photo="Ym9uam91cg=="))["result"]
+    assert merged["photos"] == 2
+    assert (await ws("fridge/memory/photo", index=1))["result"]["image"] == "Ym9uam91cg=="
+
+    # Modifier la liste à la main ne touche pas aux photos.
+    edited = (await ws("fridge/memory/save", items=[{"name": "lait"}], mode="replace"))["result"]
+    assert edited["photos"] == 2
+
+    cleared = (await ws("fridge/memory/clear"))["result"]
+    assert cleared["photos"] == 0
+    assert not (await ws("fridge/memory/photo", index=0))["success"]
