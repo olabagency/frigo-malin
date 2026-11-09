@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.4.0";
+const FM_VERSION = "1.4.1";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -304,12 +304,16 @@ ha-icon { --mdc-icon-size: 22px; display: inline-flex; }
 button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 input, textarea, select { font: inherit; color: var(--fm-text); }
 
-.app { position: relative; display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
+/* Hauteur = écran moins ce qui est au-dessus du panneau (barre d'état gérée par l'app Home Assistant).
+   --fm-top est mesuré en JavaScript. */
+.app {
+  position: relative; display: flex; flex-direction: column; overflow: hidden;
+  height: calc(100vh - var(--fm-top, 0px)); height: calc(100dvh - var(--fm-top, 0px));
+}
 .toolbar {
   display: flex; align-items: center; gap: 4px;
   height: var(--header-height, 56px); padding: 0 8px 0 4px; flex-shrink: 0;
   background: var(--fm-header-bg); color: var(--fm-header-text);
-  padding-top: env(safe-area-inset-top);
   box-sizing: content-box;
   border-bottom: var(--app-header-border-bottom, none);
 }
@@ -725,6 +729,11 @@ class FrigoMalinPanel extends HTMLElement {
 
   disconnectedCallback() {
     this._releaseWakeLock();
+    if (this._onResize) {
+      window.removeEventListener("resize", this._onResize);
+      window.removeEventListener("orientationchange", this._onResize);
+      this._onResize = null;
+    }
     this._unsubscribeList();
     if (this._onLocation) {
       window.removeEventListener("location-changed", this._onLocation);
@@ -1936,8 +1945,23 @@ class FrigoMalinPanel extends HTMLElement {
 
   /* ================================================================== rendu */
 
+  /* Mesure la place réellement disponible : Home Assistant place déjà le panneau sous la barre d'état. */
+  _fitHeight() {
+    const top = Math.max(0, Math.round(this.getBoundingClientRect().top));
+    if (top !== this._fmTop) {
+      this._fmTop = top;
+      this.style.setProperty("--fm-top", `${top}px`);
+    }
+  }
+
   _render() {
     const root = this.shadowRoot;
+    if (!this._onResize) {
+      this._onResize = () => this._fitHeight();
+      window.addEventListener("resize", this._onResize);
+      window.addEventListener("orientationchange", this._onResize);
+    }
+    requestAnimationFrame(() => this._fitHeight());
     if (!root.querySelector(".app")) {
       root.innerHTML = `<style>${STYLES}</style><div class="app"><div id="header"></div><main id="main"></main><nav class="tabs" id="nav"></nav><div id="overlay"></div><div id="toast"></div></div>`;
     }

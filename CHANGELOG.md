@@ -7,6 +7,12 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.4.1] – 2026-11-09
+
+### Corrigé
+
+- iPhone (app Home Assistant) : une bande vide apparaissait sous l'heure et la barre d'onglets du bas était coupée. Le panneau mesure maintenant la place réellement disponible sous la barre d'état.
+
 ## [1.4.0] – 2026-11-08
 
 ### Ajouté
