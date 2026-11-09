@@ -112,9 +112,8 @@ class FrigoStore:
             return []
         if days and dt_util.parse_datetime(updated) < dt_util.utcnow() - timedelta(days=days):
             return []
-        items = list(self.fridge.get("items", []))
-        items.sort(key=lambda i: (i.get("expires") is None, i.get("expires") or ""))
-        return items
+        # Dans l'ordre du frigo (photo : du haut vers le bas, puis la porte).
+        return list(self.fridge.get("items", []))
 
     def save_fridge(self, items: list[dict[str, Any]], mode: str = "replace") -> list[dict[str, Any]]:
         """Remplace ou complète le frigo mémorisé (même aliment : mis à jour)."""
@@ -131,6 +130,9 @@ class FrigoStore:
                 "name": name,
                 "amount": str(raw.get("amount") or "").strip()[:40],
                 "expires": str(expires)[:10] if expires else None,
+                # Emplacement dans le frigo (étagère n° depuis le haut, bac, porte…), pour l'afficher rangé.
+                "place": raw.get("place") if raw.get("place") in ("etagere", "bac", "porte", "congelateur", "placard") else None,
+                "shelf": _int(raw.get("shelf")),
             }
         self.fridge = {"items": list(by_key.values())[:150], "updated": dt_util.utcnow().isoformat()}
         self._save()

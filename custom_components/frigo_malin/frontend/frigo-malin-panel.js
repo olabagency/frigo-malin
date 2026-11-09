@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.11.1";
+const FM_VERSION = "1.12.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -315,6 +315,46 @@ function expiryLabel(expires) {
   if (d === 1) return "⚠️ demain";
   return `⏳ ${d} j`;
 }
+/* Où ranger un aliment sans emplacement connu (ajout à la main, ancienne photo). */
+function guessPlace(name) {
+  const n = ` ${foldText(name)} `;
+  if (/ (lait|jus|eau|boisson|soda|biere|vin|sauce|ketchup|moutarde|mayonnaise|confiture|oeufs?|beurre|cornichons?|vinaigre|sirop|kefir|boire|compotes?|coca|limonade|smoothie)[ s]/.test(n)) return "porte";
+  if (/ (salade|laitue|roquette|tomates?|carottes?|courgettes?|poivrons?|concombres?|legumes?|fruits?|pommes?|poires?|citrons?|oranges?|brocolis?|choux?|poireaux?|radis|champignons?|aubergines?|herbes?|persil|coriandre|basilic|menthe|ciboulette|fraises?|raisins?|avocats?|epinards?|celeri|fenouil|betteraves?|kiwis?|peches?|abricots?|melons?|oignons?|echalotes?|ail|gingembre|clementines?|mandarines?|bananes?)[ s]/.test(n)) return "bac";
+  return "etagere";
+}
+
+/* Le frigo comme il est rangé : étagères du haut vers le bas, bac à légumes, porte. */
+function fridgeSections(items) {
+  const shelves = new Map();
+  const other = { bac: [], porte: [], congelateur: [], placard: [] };
+  const loose = [];
+  items.forEach((item, index) => {
+    const place = item.place || guessPlace(item.name);
+    if (place === "etagere") {
+      if (item.shelf) {
+        if (!shelves.has(item.shelf)) shelves.set(item.shelf, []);
+        shelves.get(item.shelf).push(item);
+      } else loose.push(item);
+    } else other[place].push(item);
+  });
+  const nums = [...shelves.keys()].sort((a, b) => a - b);
+  const sections = nums.map((n, i) => ({
+    key: `shelf-${n}`,
+    label: nums.length === 1 ? "Étagère" : i === 0 ? "Étagère du haut" : i === nums.length - 1 && !loose.length ? "Étagère du bas" : `Étagère ${i + 1}`,
+    items: shelves.get(n),
+  }));
+  if (loose.length) sections.push({ key: "shelf-x", label: nums.length ? "Autres étagères" : "Étagères", items: loose });
+  if (other.bac.length) sections.push({ key: "bac", label: "🥬 Bac à légumes", items: other.bac });
+  return {
+    body: sections,
+    door: other.porte,
+    extra: [
+      other.congelateur.length ? { key: "congelateur", label: "❄️ Congélateur", items: other.congelateur } : null,
+      other.placard.length ? { key: "placard", label: "🗄️ Placard", items: other.placard } : null,
+    ].filter(Boolean),
+  };
+}
+
 const KEEP_OPTIONS = [["", "—"], [0, "Aujourd'hui"], [1, "1 jour"], [2, "2 jours"], [3, "3 jours"], [5, "5 jours"], [7, "1 semaine"], [14, "2 semaines"], [30, "1 mois"]];
 
 /* Macronutriments par portion (calculés par le serveur). */
@@ -697,6 +737,18 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .save-state.saved { color: var(--fm-success, #2e9e5b); }
 .save-state.error { color: var(--fm-error); }
 .set-page-intro { margin-top: 0; }
+
+/* Frigo dessiné */
+.fridge-box { margin: 12px 0; border: 2px solid var(--fm-divider); border-radius: 18px; overflow: hidden; background: color-mix(in srgb, #22b8a7 4%, var(--fm-card)); }
+.fz-body { padding: 4px 12px; }
+.fz-shelf { padding: 10px 0 12px; border-bottom: 3px solid color-mix(in srgb, #22b8a7 22%, var(--fm-divider)); }
+.fz-shelf:last-child { border-bottom: 0; }
+.fz-shelf.fz-bac { margin: 0 -12px; padding: 10px 12px 12px; background: color-mix(in srgb, #43a047 8%, transparent); border-top: 1px solid var(--fm-divider); }
+.fz-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--fm-text2); margin-bottom: 6px; }
+.fz-door { padding: 10px 12px 12px; border-top: 2px dashed var(--fm-divider); background: color-mix(in srgb, #1e88e5 6%, var(--fm-card)); }
+.fridge-box .chip { min-height: 32px; padding: 0 10px; font-size: 14px; }
+.fridge-box .chips { gap: 6px; }
+.fz-extra { padding: 0 12px; }
 
 /* Frigo mémorisé */
 .memory { border-color: color-mix(in srgb, #22b8a7 45%, var(--fm-divider)); }
@@ -2792,7 +2844,7 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   _fridgeItemsForSave() {
-    return this.s.fridge.ingredients.map((i) => ({ name: i.name, amount: i.amount || "", expires: i.expires || null }));
+    return this.s.fridge.ingredients.map((i) => ({ name: i.name, amount: i.amount || "", expires: i.expires || null, place: i.place || null, shelf: i.shelf || null }));
   }
 
   /* Les modifications de la liste (aliment retiré, ajouté, date) sont enregistrées dans la mémoire du frigo. */
@@ -4165,6 +4217,20 @@ class FrigoMalinPanel extends HTMLElement {
     </select>`;
   }
 
+  _tplFridgeDrawing(items) {
+    const { body, door, extra } = fridgeSections(items);
+    const chips = (list) =>
+      `<div class="chips">${list
+        .map((i) => `<span class="chip ${i.expires && daysLeft(i.expires) <= 2 ? "urgent-chip" : ""}">${ingEmoji(i.name)} ${esc(i.name)}</span>`)
+        .join("")}</div>`;
+    const section = (sec) => `<div class="fz-shelf fz-${sec.key.startsWith("shelf") ? "etagere" : sec.key}"><div class="fz-label">${sec.label}</div>${chips(sec.items)}</div>`;
+    return `<div class="fridge-box">
+      ${body.length ? `<div class="fz-body">${body.map(section).join("")}</div>` : ""}
+      ${door.length ? `<div class="fz-door"><div class="fz-label">🚪 Porte</div>${chips(door)}</div>` : ""}
+    </div>
+    ${extra.map((sec) => `<div class="fridge-box fz-extra">${section(sec)}</div>`).join("")}`;
+  }
+
   _tplFridgeMemory() {
     const mem = this.s.fridgeMemory;
     if (!mem.items.length) return "";
@@ -4183,10 +4249,7 @@ class FrigoMalinPanel extends HTMLElement {
       ${urgent.length
         ? `<div class="urgent">⚠️ À consommer vite : ${urgent.map((i) => `<b>${esc(i.name)}</b> (${esc(expiryLabel(i.expires).replace(/^⚠️ |^⏳ /, ""))})`).join(", ")}</div>`
         : `<div class="muted small" style="margin:8px 0 0">✅ Rien ne presse pour l'instant.</div>`}
-      <div class="chips" style="margin:10px 0 12px">${mem.items
-        .slice(0, 14)
-        .map((i) => `<span class="chip ${i.expires && daysLeft(i.expires) <= 2 ? "urgent-chip" : ""}">${ingEmoji(i.name)} ${esc(i.name)}</span>`)
-        .join("")}${mem.items.length > 14 ? `<span class="chip">+${mem.items.length - 14}</span>` : ""}</div>
+      ${this._tplFridgeDrawing(mem.items)}
       <button class="btn block big" data-action="memory-use">💡 Des idées avec ce qu'il me reste</button>
     </div>`;
   }

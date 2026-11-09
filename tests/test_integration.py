@@ -152,7 +152,7 @@ async def test_fridge_and_import(hass: HomeAssistant, hass_ws_client, aioclient_
     )
     detected = await ws("fridge/detect", image="aGVsbG8=", mime="image/jpeg")
     assert detected["success"], detected
-    assert detected["result"]["ingredients"] == [{"name": "tomates", "amount": "4", "keeps_days": None}]
+    assert detected["result"]["ingredients"] == [{"name": "tomates", "amount": "4", "keeps_days": None, "place": None, "shelf": None}]
     # 1 M de jetons en entrée et 100 k en sortie avec Haiku : 0,15 $ ≈ 0,14 €.
     usage = (await ws("config"))["result"]["usage"]
     assert usage == {"eur": 0.14, "calls": 1}
@@ -658,16 +658,20 @@ async def test_fridge_memory(hass: HomeAssistant, hass_ws_client, aioclient_mock
     aioclient_mock.post(
         "https://api.anthropic.com/v1/messages",
         json={"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({"ingredients": [
-            {"name": "salade", "amount": "1", "keeps_days": 2}, {"name": "yaourts", "amount": "4", "keeps_days": 10},
-            {"name": "pâtes", "amount": "", "keeps_days": None}]})}]},
+            {"name": "yaourts", "amount": "4", "keeps_days": 10, "place": "etagere", "shelf": 1},
+            {"name": "salade", "amount": "1", "keeps_days": 2, "place": "bac", "shelf": None},
+            {"name": "pâtes", "amount": "", "keeps_days": None, "place": "grenier", "shelf": "x"}]})}]},
     )
     detected = (await ws("fridge/detect", image="aGVsbG8="))["result"]["ingredients"]
-    assert detected[0]["keeps_days"] == 2
+    assert detected[1]["keeps_days"] == 2
+    # Emplacement dans le frigo ; une valeur inconnue est ignorée.
+    assert [(i["place"], i["shelf"]) for i in detected] == [("etagere", 1), ("bac", None), (None, None)]
 
     saved = (await ws("fridge/memory/save", items=detected, mode="replace"))["result"]
     today = dt_util.now().date()
-    assert [i["name"] for i in saved["items"]] == ["salade", "yaourts", "pâtes"]  # le plus urgent d'abord
-    assert saved["items"][0]["expires"] == (today + timedelta(days=2)).isoformat()
+    assert [i["name"] for i in saved["items"]] == ["yaourts", "salade", "pâtes"]  # l'ordre du frigo
+    assert saved["items"][0]["place"] == "etagere" and saved["items"][0]["shelf"] == 1
+    assert saved["items"][1]["expires"] == (today + timedelta(days=2)).isoformat()
     assert saved["items"][2]["expires"] is None
 
     # Compléter : un aliment déjà connu est mis à jour, les autres restent.

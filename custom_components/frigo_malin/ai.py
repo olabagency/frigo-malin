@@ -50,10 +50,17 @@ Ignore les emballages illisibles. Utilise des noms simples et courants (« tomat
 Pour chaque aliment, estime aussi combien de jours il se garde encore à partir d'aujourd'hui, d'après ce que tu vois
 (salade fraîche 3, salade un peu fanée 1, yaourts fermés 10, crème entamée 4, fromage à pâte dure 14, viande crue 2…).
 
+Note aussi où se trouve chaque aliment, pour afficher le frigo tel qu'il est rangé :
+"place" vaut "etagere" (étagères du frigo), "bac" (bac à légumes en bas), "porte" (balconnets de la porte),
+"congelateur" ou "placard" ; "shelf" est le numéro d'étagère en partant du haut (1 = la plus haute), null sinon.
+Liste les aliments dans l'ordre du frigo : de l'étagère du haut vers le bas, puis le bac, puis la porte.
+
 Réponds avec ce JSON :
-{"ingredients": [{"name": "tomates", "amount": "environ 4", "keeps_days": 5}]}
+{"ingredients": [{"name": "tomates", "amount": "environ 4", "keeps_days": 5, "place": "bac", "shelf": null}]}
 Le champ "amount" est une estimation courte, ou une chaîne vide si tu ne sais pas.
 "keeps_days" est un nombre entier de jours, ou null pour les produits qui se gardent des mois (conserves, pâtes…)."""
+
+FRIDGE_PLACES = ("etagere", "bac", "porte", "congelateur", "placard")
 
 RECIPE_SCHEMA = """{"recipes": [{
   "title": "Nom de la recette",
@@ -298,7 +305,13 @@ class AIClient:
             if name and name.lower() not in seen:
                 seen.add(name.lower())
                 result.append(
-                    {"name": name, "amount": str(item.get("amount") or "").strip(), "keeps_days": _int_or_none(item.get("keeps_days"))}
+                    {
+                        "name": name,
+                        "amount": str(item.get("amount") or "").strip(),
+                        "keeps_days": _int_or_none(item.get("keeps_days")),
+                        "place": item.get("place") if item.get("place") in FRIDGE_PLACES else None,
+                        "shelf": _int_or_none(item.get("shelf")),
+                    }
                 )
         return result
 

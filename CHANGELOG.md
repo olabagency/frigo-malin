@@ -7,6 +7,15 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.12.0] – 2026-11-09
+
+### Modifié
+
+- 🧊 **Le frigo affiché comme il est rangé** : les aliments mémorisés apparaissent par étagère, de haut en bas, puis le bac à légumes et la porte (et le congélateur ou le placard le cas échéant).
+  - La photo note maintenant l'emplacement de chaque aliment.
+  - Les aliments ajoutés à la main, ou venant d'une photo plus ancienne, sont rangés d'après leur nature : légumes et fruits dans le bac, boissons, sauces, œufs et beurre dans la porte, le reste sur les étagères.
+- Tous les aliments sont affichés (plus de « +4 »).
+
 ## [1.11.1] – 2026-11-09
 
 ### Corrigé
