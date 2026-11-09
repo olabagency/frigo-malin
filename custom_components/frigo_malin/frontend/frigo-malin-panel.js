@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.11.0";
+const FM_VERSION = "1.11.1";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -653,8 +653,8 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .home-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px 10px; border-radius: 16px; border: 1px solid var(--fm-divider); background: var(--fm-card); color: var(--fm-text); font: inherit; font-size: 12px; line-height: 1.2; text-align: center; cursor: pointer; }
 .home-tile:active { transform: scale(.97); }
 .home-tile.on { border-color: var(--fm-primary); background: var(--fm-soft); }
-.home-quick { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .28s ease, opacity .2s ease, margin .28s ease; margin-top: -14px; }
-.home-quick.open { grid-template-rows: 1fr; opacity: 1; margin-top: 0; }
+.home-quick { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .28s ease, opacity .2s ease; }
+.home-quick.open { grid-template-rows: 1fr; opacity: 1; }
 .home-quick > .inner { overflow: hidden; min-height: 0; }
 .home-quick .card { margin-bottom: 14px; }
 .home-quick .chip { min-height: 32px; padding: 0 10px; font-size: 13px; }

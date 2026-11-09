@@ -7,6 +7,12 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.11.1] – 2026-11-09
+
+### Corrigé
+
+- Accueil : un espace sépare de nouveau les raccourcis du bloc « Au menu » (l'ajout rapide replié le faisait disparaître).
+
 ## [1.11.0] – 2026-11-09
 
 ### Ajouté
