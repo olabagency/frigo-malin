@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
+import logging
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
@@ -50,6 +52,8 @@ from .parsing import (
 
 if TYPE_CHECKING:
     from . import FrigoData
+
+_LOGGER = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp", "image/gif"}
@@ -651,6 +655,10 @@ MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "ao�
         vol.Optional("use_carnet", default=True): bool,
         vol.Optional("leftovers", default=True): bool,
         vol.Optional("notes", default=""): str,
+        # Repas gardés (🔒) : on ne les change pas, l'IA en tient compte.
+        vol.Optional("locked", default=[]): [dict],
+        # Plats à ne pas reproposer (remplacer un repas).
+        vol.Optional("avoid", default=[]): [str],
     }
 )
 @websocket_api.async_response
@@ -688,6 +696,12 @@ async def ws_plan_generate(
             leftovers=msg["leftovers"],
             notes=msg["notes"],
             month=MONTHS[msg["slots"][0]["date"].month - 1],
+            locked=[
+                {"date": str(m.get("date")), "slot": m.get("slot"), "title": str(m.get("title") or "")}
+                for m in msg["locked"]
+                if m.get("title")
+            ],
+            avoid=msg["avoid"],
         )
     except AIError as err:
         _error(connection, msg["id"], err)
@@ -695,11 +709,8 @@ async def ws_plan_generate(
     for meal in proposal["meals"]:
         if meal["recipe_id"]:
             recipe = data.store.recipes[meal["recipe_id"]]
-            meal["title"] = recipe["title"]
-            meal["time"] = (recipe.get("prep_time") or 0) + (recipe.get("cook_time") or 0) or None
-        else:
-            meal["title"] = meal["recipe"]["title"]
-            meal["time"] = (meal["recipe"].get("prep_time") or 0) + (meal["recipe"].get("cook_time") or 0) or None
+            meal["time"] = (recipe.get("prep_time") or 0) + (recipe.get("cook_time") or 0) or meal["time"]
+            meal["description"] = meal["description"] or recipe.get("description", "")
     proposal["budget"] = budget
     connection.send_result(msg["id"], proposal)
 
@@ -716,23 +727,46 @@ async def ws_plan_apply(hass: HomeAssistant, connection: websocket_api.ActiveCon
     """Enregistre le menu proposé : nouvelles recettes dans le carnet, repas au menu, courses."""
     data = _data(hass)
     servings = msg.get("servings") or _servings_default(data)
-    entries = []
-    for meal in msg["meals"]:
+    household = household_context(data.store.settings)
+    meals = [m for m in msg["meals"] if m.get("title") or m.get("recipe_id") in data.store.recipes]
+    titles = {(m.get("date"), m.get("slot")): m.get("title") for m in meals}
+
+    # Les recettes des repas gardés sont écrites maintenant, plusieurs à la fois.
+    limit = asyncio.Semaphore(4)
+
+    async def write(meal: dict[str, Any]) -> dict[str, Any] | None:
+        if meal.get("recipe_id") in data.store.recipes:
+            return None
+        if isinstance(meal.get("recipe"), dict) and meal["recipe"].get("title"):
+            return meal["recipe"]
+        source = meal.get("leftovers_from") or {}
+        async with limit:
+            try:
+                return await data.ai.write_recipe(
+                    meal, servings, household, leftovers_title=titles.get((source.get("date"), source.get("slot")), "") or ""
+                )
+            except AIError as err:
+                _LOGGER.warning("Planification : %s", err)
+                return False  # type: ignore[return-value]
+
+    written = await asyncio.gather(*(write(m) for m in meals))
+    entries, failed = [], []
+    for meal, recipe in zip(meals, written, strict=True):
         try:
             day = _parse_date(str(meal.get("date")))
         except vol.Invalid:
             continue
         slot = meal.get("slot") if meal.get("slot") in SLOTS else "dinner"
+        if recipe is False:
+            failed.append(meal.get("title"))
+            continue
         recipe_id = meal.get("recipe_id")
-        if recipe_id not in data.store.recipes:
-            raw = meal.get("recipe")
-            if not isinstance(raw, dict) or not raw.get("title"):
-                continue
-            raw = {k: v for k, v in raw.items() if k not in ("uses", "missing")}
+        if recipe is not None:
+            raw = {k: v for k, v in recipe.items() if k not in ("uses", "missing")}
             recipe_id = data.store.save_recipe({**raw, "origin": "ai"}, servings)["id"]
         entries.append(data.store.add_plan(day, slot, recipe_id, servings, str(meal.get("note") or "")))
 
-    result: dict[str, Any] = {"entries": entries, "added": [], "list_name": None, "shopping_error": None}
+    result: dict[str, Any] = {"entries": entries, "added": [], "list_name": None, "shopping_error": None, "failed": failed}
     if entries and _options(data).get(CONF_AUTO_SHOPPING, True):
         try:
             summary = await _add_to_list(hass, data, _plan_items(data, entries))

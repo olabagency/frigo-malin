@@ -363,8 +363,15 @@ class AIClient:
         leftovers: bool = True,
         notes: str = "",
         month: str = "",
+        locked: list[dict[str, Any]] | None = None,
+        avoid: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Propose un menu complet pour les créneaux demandés."""
+        """Propose le MENU (titres, temps, coût, restes) pour les créneaux demandés.
+
+        Les recettes détaillées sont écrites ensuite, seulement pour les repas gardés
+        (voir write_recipe). `locked` : repas déjà choisis, à ne pas changer mais à prendre
+        en compte (variété, restes). `avoid` : plats à ne pas reproposer.
+        """
         lines = [
             f"Prépare le menu de la semaine pour {servings} personnes, en France, au mois de {month}.",
             "Créneaux à remplir (un repas par créneau, dans cet ordre) :",
@@ -373,30 +380,33 @@ class AIClient:
             lines.append(
                 f"- {slot['date']} ({slot['day']}) {slot['slot_label']} : {slot['max_time']} minutes maximum en tout"
             )
+        if locked:
+            lines += ["", "Repas déjà choisis par le foyer (ne les propose pas, mais tiens-en compte pour varier le menu) :"]
+            for meal in locked:
+                lines.append(f"- {meal['date']} {'midi' if meal['slot'] == 'lunch' else 'soir'} : {meal['title']}")
+        if avoid:
+            lines += ["", "Ne repropose pas ces plats : " + ", ".join(avoid[:40]) + "."]
         lines += [
             "",
             "Règles :",
             "- Menu varié et équilibré : pas deux fois la même protéine ou le même féculent de suite, des légumes à chaque repas.",
             "- Produits de saison pour ce mois-là en France.",
             "- Respecte le temps maximum de chaque créneau (préparation + cuisson) : rapide en semaine, plus élaboré le week-end.",
-            "- Recettes concises : 7 étapes au plus, phrases courtes. Quantités pour le nombre de personnes indiqué.",
-            "- estimated_cost : coût estimé du repas en euros, prix de supermarché français.",
+            "- Ne détaille PAS les recettes : seulement le nom du plat, une phrase de description, 3 à 6 ingrédients principaux.",
+            "- time : temps total en minutes ; estimated_cost : coût du repas en euros, prix de supermarché français.",
         ]
         if budget:
             lines.append(f"- Budget : {budget} € maximum pour l'ensemble de ces repas. Reste en dessous.")
         if leftovers:
-            lines += [
+            lines.append(
                 "- Cuisine des restes : prévois 1 à 3 enchaînements où un plat est cuisiné en plus grande quantité"
-                " (ses ingrédients en tiennent compte, et sa note le dit : « Préparez-en le double… »)"
-                " et réutilisé dans un repas suivant de la semaine, transformé (poulet rôti → salade de poulet,"
-                " riz → riz sauté, ratatouille → tarte). Le repas qui utilise les restes n'inclut PAS ces restes dans"
-                " ses ingrédients, renseigne leftovers_from avec la date et le créneau du plat d'origine,"
-                " et sa note dit « Avec les restes de … ».",
-            ]
+                " (sa note le dit : « Préparez-en le double… ») et réutilisé dans un repas suivant, transformé"
+                " (poulet rôti → salade de poulet, riz → riz sauté). Ce repas renseigne leftovers_from avec la date"
+                " et le créneau du plat d'origine, et sa note dit « Avec les restes de … »."
+            )
         if carnet:
             lines.append(
-                "- Tu peux reprendre 1 à 3 recettes du carnet du foyer (de préférence les favorites) :"
-                " indique alors seulement recipe_id et mets recipe à null. Carnet :"
+                "- Tu peux reprendre 1 à 3 recettes du carnet du foyer (de préférence les favorites) : indique alors recipe_id. Carnet :"
             )
             for r in carnet:
                 lines.append(f"  - id={r['id']} : {r['title']}" + (" (favorite)" if r.get("favorite") else ""))
@@ -408,25 +418,23 @@ class AIClient:
             "",
             "Réponds avec ce JSON :",
             """{"summary": "Deux phrases sur l'esprit de ce menu",
- "estimated_total": 58.5,
- "meals": [{"date": "2026-11-09", "slot": "dinner", "recipe_id": null,
-   "recipe": {"title": "...", "description": "...", "servings": 4, "prep_time": 10, "cook_time": 20,
-              "ingredients": [{"quantity": 200, "unit": "g", "name": "farine"}], "steps": ["..."], "tags": ["..."]},
-   "leftovers_from": null, "note": "", "estimated_cost": 7.5}]}
+ "meals": [{"date": "2026-11-09", "slot": "dinner", "recipe_id": null, "title": "Poulet rôti aux légumes",
+   "description": "Une phrase.", "key_ingredients": ["poulet", "carottes", "pommes de terre"],
+   "time": 75, "estimated_cost": 12.5, "leftovers_from": null, "note": ""}]}
 slot vaut "lunch" (midi) ou "dinner" (soir). leftovers_from vaut null ou {"date": "...", "slot": "..."}.""",
         ]
-        data = await self._complete("\n".join(lines), max_tokens=32000, timeout=LONG_TIMEOUT, task="plan")
+        data = await self._complete("\n".join(lines), max_tokens=8000, timeout=LONG_TIMEOUT, task="plan")
         if not isinstance(data, dict):
             raise AIError("La réponse de l'IA était illisible. Réessayez.")
         wanted = {(s["date"], s["slot"]) for s in slots}
-        known = {r["id"] for r in carnet or []}
+        known = {r["id"]: r for r in carnet or []}
         meals = []
         for raw in data.get("meals") or []:
             if not isinstance(raw, dict) or (raw.get("date"), raw.get("slot")) not in wanted:
                 continue
             recipe_id = raw.get("recipe_id") if raw.get("recipe_id") in known else None
-            recipe = clean_ai_recipe(raw["recipe"]) if isinstance(raw.get("recipe"), dict) else None
-            if not recipe_id and not (recipe and recipe["title"]):
+            title = known[recipe_id]["title"] if recipe_id else str(raw.get("title") or "").strip()
+            if not title:
                 continue
             source = raw.get("leftovers_from")
             meals.append(
@@ -434,7 +442,10 @@ slot vaut "lunch" (midi) ou "dinner" (soir). leftovers_from vaut null ou {"date"
                     "date": raw["date"],
                     "slot": raw["slot"],
                     "recipe_id": recipe_id,
-                    "recipe": None if recipe_id else recipe,
+                    "title": title,
+                    "description": str(raw.get("description") or "").strip()[:300],
+                    "key_ingredients": [str(x).strip() for x in raw.get("key_ingredients") or [] if str(x).strip()][:6],
+                    "time": _int_or_none(raw.get("time")),
                     "note": str(raw.get("note") or "").strip()[:200],
                     "leftovers_from": source if isinstance(source, dict) and source.get("date") else None,
                     "estimated_cost": _float_or_none(raw.get("estimated_cost")),
@@ -444,11 +455,35 @@ slot vaut "lunch" (midi) ou "dinner" (soir). leftovers_from vaut null ou {"date"
         if not meals:
             raise AIError("L'IA n'a pas proposé de menu. Réessayez.")
         meals.sort(key=lambda m: (m["date"], 0 if m["slot"] == "lunch" else 1))
-        return {
-            "summary": str(data.get("summary") or "").strip(),
-            "estimated_total": _float_or_none(data.get("estimated_total")),
-            "meals": meals,
-        }
+        return {"summary": str(data.get("summary") or "").strip(), "meals": meals}
+
+    async def write_recipe(
+        self, meal: dict[str, Any], servings: int, household: str = "", leftovers_title: str = ""
+    ) -> dict[str, Any]:
+        """Écrit la recette complète d'un repas du menu (après validation)."""
+        prompt = (
+            f"Écris la recette « {meal['title']} » pour {servings} personnes.\n"
+            + (f"Description : {meal.get('description')}\n" if meal.get("description") else "")
+            + (f"Ingrédients principaux prévus : {', '.join(meal.get('key_ingredients') or [])}.\n" if meal.get("key_ingredients") else "")
+            + (f"Temps total visé : {meal['time']} minutes au maximum.\n" if meal.get("time") else "")
+            + (f"Remarque du menu : {meal['note']}\n" if meal.get("note") else "")
+            + (
+                f"Ce repas réutilise les restes de « {leftovers_title} » : ne mets PAS ces restes dans la liste "
+                "des ingrédients, mentionne-les dans les étapes.\n"
+                if leftovers_title
+                else ""
+            )
+            + "Recette concise et réaliste : 7 étapes au plus, phrases courtes, quantités pour le nombre de personnes indiqué.\n"
+            + (f"\nProfil du foyer :\n{household}\n" if household else "")
+            + f"\nRéponds avec ce JSON (une seule recette) :\n{RECIPE_SCHEMA}"
+        )
+        data = await self._complete(prompt, task="recipe")
+        recipes = data.get("recipes", []) if isinstance(data, dict) else []
+        if not recipes:
+            raise AIError(f"Recette non écrite : {meal['title']}")
+        recipe = clean_ai_recipe(recipes[0])
+        recipe["title"] = recipe["title"] or meal["title"]
+        return recipe
 
 
 PHOTO_PROMPT = """Ces photos montrent une recette : page de livre, magazine, fiche manuscrite ou écran.

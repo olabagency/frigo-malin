@@ -446,7 +446,12 @@ select.input { appearance: auto; }
 .plan-day .d { width: 76px; font-weight: 500; }
 .plan-day .chip { min-height: 36px; }
 .plan-day .chip.taken { opacity: .5; text-decoration: line-through; }
-.pmeal { display: flex; gap: 12px; align-items: flex-start; }
+.pmeal { display: flex; gap: 12px; align-items: flex-start; transition: opacity .2s; }
+.pmeal.locked { border-color: var(--fm-success); box-shadow: 0 0 0 1px var(--fm-success); }
+.pmeal.busy { opacity: .55; }
+.pm-actions { display: flex; flex-direction: column; gap: 2px; margin: -6px -8px -6px 0; }
+.pm-actions .icon-btn { width: 38px; height: 38px; color: var(--fm-text2); }
+.pm-actions .icon-btn.on { color: var(--fm-success); }
 .pmeal .thumb { width: 52px; height: 52px; font-size: 26px; }
 .pmeal .when { font-size: 12px; color: var(--fm-text2); text-transform: uppercase; letter-spacing: .04em; }
 .pmeal .t { font-weight: 500; font-size: 16px; margin: 2px 0; }
@@ -1543,7 +1548,17 @@ class FrigoMalinPanel extends HTMLElement {
         return;
       }
       case "weekplan-generate":
-        this._generateWeek();
+        if (this.top.step === "preview") this._redoWeek();
+        else this._generateWeek();
+        return;
+      case "weekplan-lock": {
+        const meal = this.top.proposal.meals[Number(d.i)];
+        meal.locked = !meal.locked;
+        this._renderOverlay();
+        return;
+      }
+      case "weekplan-replace":
+        this._replaceMeal(Number(d.i));
         return;
       case "weekplan-remove":
         this.top.proposal.meals.splice(Number(d.i), 1);
@@ -1937,9 +1952,7 @@ class FrigoMalinPanel extends HTMLElement {
       if (this.top === top) this._renderOverlay();
     }, 3500);
     try {
-      const payload = { slots, use_carnet: top.useCarnet, leftovers: top.leftovers, notes: top.notes || "", servings: Number(top.servings) || 4 };
-      if (top.budget !== "" && Number(top.budget) > 0) payload.budget = Number(top.budget);
-      top.proposal = await this._ws("plan/generate", payload);
+      top.proposal = await this._ws("plan/generate", this._planPayload(top, slots));
       top.step = "preview";
     } catch (err) {
       top.step = "form";
@@ -1949,13 +1962,75 @@ class FrigoMalinPanel extends HTMLElement {
     this._renderOverlay();
   }
 
+  _planPayload(top, slots, extra = {}) {
+    const payload = { slots, use_carnet: top.useCarnet, leftovers: top.leftovers, notes: top.notes || "", servings: Number(top.servings) || 4, ...extra };
+    if (top.budget !== "" && Number(top.budget) > 0) payload.budget = Number(top.budget);
+    return payload;
+  }
+
+  /* Refaire : seuls les repas non gardés (🔒) sont reproposés. */
+  async _redoWeek() {
+    const top = this.top;
+    const meals = top.proposal.meals;
+    const keep = meals.filter((m) => m.locked);
+    const redo = meals.filter((m) => !m.locked);
+    if (!redo.length) {
+      this._toast("Tous les repas sont gardés 🔒 : rien à refaire.");
+      return;
+    }
+    redo.forEach((m) => (m.replacing = true));
+    this._renderOverlay();
+    try {
+      const res = await this._ws(
+        "plan/generate",
+        this._planPayload(top, redo.map((m) => ({ date: m.date, slot: m.slot })), {
+          locked: keep.map((m) => ({ date: m.date, slot: m.slot, title: m.title })),
+          avoid: redo.map((m) => m.title),
+        })
+      );
+      top.proposal.meals = [...keep, ...res.meals].sort((a, b) => (a.date + (a.slot === "lunch" ? 0 : 1)).localeCompare(b.date + (b.slot === "lunch" ? 0 : 1)));
+      if (res.summary) top.proposal.summary = res.summary;
+    } catch (err) {
+      redo.forEach((m) => (m.replacing = false));
+      this._toast(this._err(err), true);
+    }
+    this._renderOverlay();
+  }
+
+  /* ↻ Remplacer un seul repas. */
+  async _replaceMeal(i) {
+    const top = this.top;
+    const meal = top.proposal.meals[i];
+    if (!meal || meal.replacing) return;
+    meal.replacing = true;
+    this._renderOverlay();
+    try {
+      const others = top.proposal.meals.filter((m) => m !== meal);
+      const res = await this._ws(
+        "plan/generate",
+        this._planPayload(top, [{ date: meal.date, slot: meal.slot }], {
+          locked: others.map((m) => ({ date: m.date, slot: m.slot, title: m.title })),
+          avoid: [meal.title],
+        })
+      );
+      const fresh = res.meals[0];
+      const idx = top.proposal.meals.indexOf(meal);
+      if (fresh && idx >= 0) top.proposal.meals[idx] = fresh;
+      else meal.replacing = false;
+    } catch (err) {
+      meal.replacing = false;
+      this._toast(this._err(err), true);
+    }
+    this._renderOverlay();
+  }
+
   async _applyWeek() {
     const top = this.top;
     if (!top.proposal || !top.proposal.meals.length) return;
     top.step = "applying";
     this._renderOverlay();
     try {
-      const res = await this._ws("plan/apply", { meals: top.proposal.meals, servings: Number(top.servings) || 4 });
+      const res = await this._ws("plan/apply", { meals: top.proposal.meals.map(({ locked, replacing, ...m }) => m), servings: Number(top.servings) || 4 });
       const list = await this._ws("recipes/list");
       this.s.recipes = list.recipes;
       this.s.stack.pop();
@@ -1966,6 +2041,7 @@ class FrigoMalinPanel extends HTMLElement {
       if (res.added && res.added.length) msg += ` · ${res.added.length} ingrédients dans « ${res.list_name} »`;
       this._toast(msg);
       if (res.shopping_error) setTimeout(() => this._toast(res.shopping_error, true), 4200);
+      if (res.failed && res.failed.length) setTimeout(() => this._toast(`Recette non écrite : ${res.failed.join(", ")}. Réessayez pour ce repas.`, true), 4200);
     } catch (err) {
       top.step = "preview";
       this._renderOverlay();
@@ -3063,12 +3139,18 @@ class FrigoMalinPanel extends HTMLElement {
 
   _tplWeekPlan(top) {
     if (top.step === "loading" || top.step === "applying") {
-      const msg = top.step === "applying" ? "J'ajoute tout au menu et à la liste de courses…" : PLAN_LOADING[top.loadingMsg || 0];
+      const toWrite = top.proposal ? top.proposal.meals.filter((m) => !m.recipe_id).length : 0;
+      const msg =
+        top.step === "applying"
+          ? toWrite
+            ? `✍️ J'écris ${toWrite} recette${toWrite > 1 ? "s" : ""}, puis je remplis la liste de courses…`
+            : "J'ajoute tout au menu et à la liste de courses…"
+          : PLAN_LOADING[top.loadingMsg || 0];
       return this._tplSheet("Planifier ma semaine", `<div class="card hero">
         <div class="emoji" style="font-size:56px">✨</div>
         <div class="spinner" style="margin:16px auto;color:var(--fm-primary)"></div>
         <h2>${esc(msg)}</h2>
-        <p class="muted">Un menu complet prend environ une à deux minutes.</p>
+        <p class="muted">${top.step === "applying" ? "Les recettes s'écrivent en parallèle : une trentaine de secondes." : "Le menu arrive en une quinzaine de secondes."}</p>
       </div>`);
     }
     if (top.step === "preview") return this._tplWeekPreview(top);
@@ -3113,27 +3195,36 @@ class FrigoMalinPanel extends HTMLElement {
     const label = (m) => `${cap(fmtDay(m.date, { weekday: "long", day: "numeric" }))} · ${m.slot === "lunch" ? "midi" : "soir"}`;
     const body = `
       ${p.summary ? `<div class="info">✨ ${esc(p.summary)}</div>` : ""}
+      <p class="muted small" style="margin:0 0 10px">🔒 Gardez les repas qui vous plaisent, ↻ remplacez-en un, ✕ retirez-le. Les recettes ne sont écrites qu'à la validation.</p>
       ${total ? `<p class="row small ${over ? "warn" : "muted"}" style="margin:0 0 12px">${icon("cash")} Coût estimé : <b>${fmtNumber(total)} €</b>${p.budget ? ` pour un budget de ${p.budget} €` : ""}</p>` : ""}
       ${p.meals
-        .map((m, i) => `<div class="card pmeal">
-          <div class="thumb" style="background:hsl(${hashHue(m.title)} 60% 50% / .15)">${emojiFor(m.title)}</div>
+        .map((m, i) => `<div class="card pmeal ${m.locked ? "locked" : ""} ${m.replacing ? "busy" : ""}">
+          <div class="thumb" style="background:hsl(${hashHue(m.title)} 60% 50% / .15)">${m.replacing ? `<span class="spinner sm"></span>` : emojiFor(m.title)}</div>
           <div class="grow">
             <div class="when">${esc(label(m))}</div>
             <div class="t">${esc(m.title)}</div>
+            ${m.description ? `<div class="muted small">${esc(m.description)}</div>` : ""}
             <div class="badges">
               ${m.time ? `<span class="tag">⏱️ ${fmtMinutes(m.time)}</span>` : ""}
               ${m.estimated_cost ? `<span class="tag gold">${fmtNumber(m.estimated_cost)} €</span>` : ""}
               ${m.recipe_id ? `<span class="tag">📖 Du carnet</span>` : ""}
               ${m.leftovers_from ? `<span class="tag alt">♻️ Restes</span>` : ""}
+              ${m.locked ? `<span class="tag alt">🔒 Gardé</span>` : ""}
             </div>
+            ${m.key_ingredients && m.key_ingredients.length ? `<div class="muted small" style="margin-top:6px">${m.key_ingredients.map((x) => `${ingEmoji(x)} ${esc(x)}`).join(" · ")}</div>` : ""}
             ${m.note ? `<div class="muted small" style="margin-top:6px">${esc(m.note)}</div>` : ""}
           </div>
-          <button class="icon-btn" data-action="weekplan-remove" data-i="${i}" aria-label="Retirer ce repas">${icon("close")}</button>
+          <div class="pm-actions">
+            <button class="icon-btn ${m.locked ? "on" : ""}" data-action="weekplan-lock" data-i="${i}" aria-label="${m.locked ? "Ne plus garder" : "Garder ce repas"}" title="${m.locked ? "Gardé" : "Garder"}">${icon(m.locked ? "lock" : "lock-open-variant-outline")}</button>
+            <button class="icon-btn" data-action="weekplan-replace" data-i="${i}" aria-label="Remplacer ce repas" title="Remplacer" ${m.locked || m.replacing ? "disabled" : ""}>${icon("refresh")}</button>
+            <button class="icon-btn" data-action="weekplan-remove" data-i="${i}" aria-label="Retirer ce repas" title="Retirer">${icon("close")}</button>
+          </div>
         </div>`)
         .join("")}
       <button class="btn text block" data-action="weekplan-back">${icon("tune-variant")} Changer les réglages et recommencer</button>`;
-    const footer = `<button class="btn tonal" data-action="weekplan-generate">${icon("refresh")}</button>
-      <button class="btn grow big" data-action="weekplan-apply" ${p.meals.length ? "" : "disabled"}>${icon("calendar-check")} Ajouter ${p.meals.length} repas au menu</button>`;
+    const unlocked = p.meals.filter((m) => !m.locked).length;
+    const footer = `<button class="btn tonal" data-action="weekplan-generate" title="Refaire les repas non gardés" ${unlocked && unlocked < p.meals.length + 1 ? "" : "disabled"}>${icon("refresh")} ${unlocked < p.meals.length ? `Refaire ${unlocked}` : "Tout refaire"}</button>
+      <button class="btn grow big" data-action="weekplan-apply" ${p.meals.length ? "" : "disabled"}>${icon("calendar-check")} Ajouter ${p.meals.length} repas</button>`;
     return this._tplSheet("Votre menu", body, footer);
   }
 

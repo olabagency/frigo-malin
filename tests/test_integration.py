@@ -329,6 +329,7 @@ async def test_settings_photo_and_sensor(hass: HomeAssistant, hass_ws_client, ai
 
 
 async def test_plan_week_with_leftovers(hass: HomeAssistant, hass_ws_client, aioclient_mock) -> None:
+    """Planification en deux temps : le menu d'abord, les recettes seulement pour les repas gardés."""
     await _setup(hass)
     await _clear_list(hass)
     client = await hass_ws_client(hass)
@@ -342,18 +343,14 @@ async def test_plan_week_with_leftovers(hass: HomeAssistant, hass_ws_client, aio
         "https://api.anthropic.com/v1/messages",
         json={"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({
             "summary": "Un menu d'automne.",
-            "estimated_total": 30,
             "meals": [
-                {"date": "2026-11-15", "slot": "dinner", "recipe_id": None, "estimated_cost": 12,
-                 "note": "Préparez-en le double pour lundi.",
-                 "recipe": {"title": "Poulet rôti", "servings": 4, "prep_time": 15, "cook_time": 60,
-                            "ingredients": [{"quantity": 2, "unit": "", "name": "poulets"}], "steps": ["Rôtir"]}},
-                {"date": "2026-11-16", "slot": "dinner", "recipe_id": None, "estimated_cost": 6,
-                 "leftovers_from": {"date": "2026-11-15", "slot": "dinner"}, "note": "Avec les restes du poulet rôti.",
-                 "recipe": {"title": "Salade de poulet", "servings": 4,
-                            "ingredients": [{"quantity": 1, "unit": "", "name": "salade"}], "steps": ["Mélanger"]}},
-                {"date": "2026-11-17", "slot": "dinner", "recipe_id": favourite["id"], "recipe": None},
-                {"date": "2030-01-01", "slot": "dinner", "recipe_id": None, "recipe": {"title": "Hors sujet"}},
+                {"date": "2026-11-15", "slot": "dinner", "recipe_id": None, "title": "Poulet rôti", "time": 75,
+                 "estimated_cost": 12, "key_ingredients": ["poulet"], "note": "Préparez-en le double pour lundi."},
+                {"date": "2026-11-16", "slot": "dinner", "recipe_id": None, "title": "Salade de poulet", "time": 20,
+                 "estimated_cost": 6, "leftovers_from": {"date": "2026-11-15", "slot": "dinner"},
+                 "note": "Avec les restes du poulet rôti."},
+                {"date": "2026-11-17", "slot": "dinner", "recipe_id": favourite["id"]},
+                {"date": "2026-11-18", "slot": "dinner", "title": "Hors créneau"},
             ],
         })}]},
     )
@@ -361,21 +358,36 @@ async def test_plan_week_with_leftovers(hass: HomeAssistant, hass_ws_client, aio
         "plan/generate",
         slots=[{"date": "2026-11-15", "slot": "dinner"}, {"date": "2026-11-16", "slot": "dinner"}, {"date": "2026-11-17", "slot": "dinner"}],
         budget=40,
+        locked=[{"date": "2026-11-14", "slot": "lunch", "title": "Quiche"}],
+        avoid=["Lasagnes"],
     )
     assert proposal["success"], proposal
     meals = proposal["result"]["meals"]
     assert [m["title"] for m in meals] == ["Poulet rôti", "Salade de poulet", "Gratin"]
     assert meals[1]["leftovers_from"] == {"date": "2026-11-15", "slot": "dinner"}
-    prompt = aioclient_mock.mock_calls[-1][2]["messages"][0]["content"][-1]["text"]
+    sent = aioclient_mock.mock_calls[-1][2]
+    prompt = sent["messages"][0]["content"][-1]["text"]
+    assert sent["model"] == "claude-opus-5-5"  # planifier : le modèle le plus puissant
     assert "novembre" in prompt and "40 €" in prompt and "Cuisine des restes" in prompt and favourite["id"] in prompt
+    assert "Quiche" in prompt and "Lasagnes" in prompt and "Ne détaille PAS" in prompt
 
-    applied = await ws("plan/apply", meals=meals, servings=4)
+    # On retire le 2e repas avant de valider : sa recette n'est jamais écrite.
+    kept = [meals[0], meals[2]]
+    written = []
+
+    async def fake_write(meal, servings, household="", leftovers_title=""):
+        written.append(meal["title"])
+        return {"title": meal["title"], "servings": servings, "ingredients": [{"quantity": 2, "unit": "", "name": "poulets"}], "steps": ["Rôtir"]}
+
+    with patch("custom_components.frigo_malin.ai.AIClient.write_recipe", side_effect=fake_write):
+        applied = await ws("plan/apply", meals=kept, servings=4)
     assert applied["success"], applied
-    assert len(applied["result"]["entries"]) == 3
-    assert applied["result"]["entries"][1]["note"] == "Avec les restes du poulet rôti."
-    assert sorted(await _todo_items(hass)) == ["Pommes de terre (1 kg)", "Poulets (2)", "Salade (1)"]
+    assert written == ["Poulet rôti"]  # le Gratin vient du carnet
+    assert len(applied["result"]["entries"]) == 2
+    assert applied["result"]["entries"][0]["note"] == "Préparez-en le double pour lundi."
+    assert sorted(await _todo_items(hass)) == ["Pommes de terre (1 kg)", "Poulets (2)"]
     recipes = (await ws("recipes/list"))["result"]["recipes"]
-    assert {r["title"] for r in recipes} == {"Gratin", "Poulet rôti", "Salade de poulet"}
+    assert {r["title"] for r in recipes} == {"Gratin", "Poulet rôti"}
 
 
 async def test_store_reminder(hass: HomeAssistant, hass_ws_client) -> None:
