@@ -7,6 +7,17 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.16.1] – 2026-11-09
+
+### Ajouté
+
+- Valeurs nutritionnelles : **« 🔎 Détail par ingrédient »** montre, pour une portion, le poids et les calories de chaque ingrédient, du plus calorique au moins calorique, pour vérifier le calcul.
+
+### Corrigé
+
+- La carte « Qu'y a-t-il dans votre frigo ? » et l'écran d'attente « Planifier ma semaine » prenaient le style sombre de l'en-tête photo des recettes (texte en colonnes illisible).
+- Les descriptions trop longues (celles de Marmiton, par exemple) sont limitées à 3 lignes sur la photo.
+
 ## [1.16.0] – 2026-11-09
 
 ### Modifié

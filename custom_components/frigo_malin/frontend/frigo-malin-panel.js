@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.16.0";
+const FM_VERSION = "1.16.1";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -678,6 +678,11 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .nut-grid b { font-size: 16px; color: var(--fm-text); }
 .nut-grid small { font-size: 11px; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.nut-details { margin-top: 12px; border-top: 1px solid var(--fm-divider); padding-top: 8px; }
+.nut-details summary { cursor: pointer; font-size: 14px; color: var(--fm-primary); padding: 4px 0; }
+.nut-line { display: grid; grid-template-columns: 1fr auto 76px; gap: 8px; font-size: 14px; padding: 5px 0; border-bottom: 1px solid var(--fm-divider); }
+.nut-line:last-child { border-bottom: 0; }
+.nut-line b { text-align: right; font-weight: 600; }
 .nut-day { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--fm-text2); white-space: nowrap; }
 .week-nut { padding: 12px 14px; }
 .week-nut .nut-bar { margin: 10px 0 8px; height: 8px; }
@@ -896,23 +901,24 @@ select.keep.danger { border-color: var(--fm-error); color: var(--fm-error); font
 .sheet .footer .inner { display: flex; gap: 8px; width: 100%; max-width: 728px; }
 
 /* En-tête photo des recettes */
-.hero { position: relative; margin: -16px -16px 14px; min-height: 250px; display: flex; align-items: flex-end; background-color: #444; background-size: cover; background-position: center; color: #fff; overflow: hidden; }
-.hero::before { content: var(--hero-emoji, ""); position: absolute; top: 14px; left: 18px; font-size: 64px; opacity: .95; transform: rotate(-8deg); }
+.rhero { position: relative; margin: -16px -16px 14px; min-height: 250px; display: flex; align-items: flex-end; background-color: #444; background-size: cover; background-position: center; color: #fff; overflow: hidden; }
+.rhero::before { content: var(--hero-emoji, ""); position: absolute; top: 14px; left: 18px; font-size: 64px; opacity: .95; transform: rotate(-8deg); }
 .hero-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 25%, rgba(0,0,0,.35) 55%, rgba(0,0,0,.82) 100%); }
 .hero-text { position: relative; width: 100%; padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 6px; }
 .hero-badge { align-self: flex-start; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 12px; background: rgba(255,255,255,.22); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .hero-title { margin: 0; font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -.01em; color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,.35); }
 .hero-desc { margin: 0; font-size: 15px; color: rgba(255,255,255,.88); text-shadow: 0 1px 6px rgba(0,0,0,.35); }
-.hero.edit textarea.hero-title, .hero.edit input.hero-desc { font-family: inherit; background: transparent; border: 0; border-bottom: 1px dashed rgba(255,255,255,.45); border-radius: 0; padding: 2px 0 4px; outline: none; width: 100%; resize: none; }
-.hero.edit textarea.hero-title { overflow: hidden; }
-.hero.edit textarea.hero-title:focus, .hero.edit input.hero-desc:focus { border-bottom: 2px solid #fff; }
-.hero.edit ::placeholder { color: rgba(255,255,255,.6); }
+.rhero.edit textarea.hero-title, .rhero.edit input.hero-desc { font-family: inherit; background: transparent; border: 0; border-bottom: 1px dashed rgba(255,255,255,.45); border-radius: 0; padding: 2px 0 4px; outline: none; width: 100%; resize: none; }
+.rhero.edit textarea.hero-title { overflow: hidden; }
+.rhero.edit textarea.hero-title:focus, .rhero.edit input.hero-desc:focus { border-bottom: 2px solid #fff; }
+.rhero.edit ::placeholder { color: rgba(255,255,255,.6); }
+.rhero p.hero-desc { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .hero-photo { position: absolute; top: 12px; right: 12px; z-index: 1; width: 40px; height: 40px; border-radius: 50%; border: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.35); color: #fff; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: pointer; }
 .hero-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
 .hero-stats label { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 14px; background: var(--fm-card); border: 1px solid var(--fm-divider); font-size: 12px; color: var(--fm-text2); position: relative; }
 .hero-stats input { border: 0; background: transparent; font: inherit; font-size: 20px; font-weight: 600; color: var(--fm-text); width: 100%; padding: 0; outline: none; }
 .hero-stats em { position: absolute; right: 12px; bottom: 11px; font-style: normal; font-size: 12px; }
-@media (min-width: 792px) { .hero { margin: 0 0 14px; border-radius: var(--fm-radius); } }
+@media (min-width: 792px) { .rhero { margin: 0 0 14px; border-radius: var(--fm-radius); } }
 
 .cover { width: 100%; max-height: 280px; object-fit: cover; border-radius: var(--fm-radius); display: block; margin-bottom: 12px; }
 .meta { display: flex; flex-wrap: wrap; gap: 16px; color: var(--fm-text2); font-size: 14px; margin: 10px 0; }
@@ -2882,6 +2888,9 @@ class FrigoMalinPanel extends HTMLElement {
           ${parts.map(([k, label, g, p]) => `<div><span class="dot" style="background:${NUT_COLORS[k]}"></span><b>${fmtNumber(g)} g</b><span>${label}</span><small>${p} %</small></div>`).join("")}
           <div><span class="dot" style="background:${NUT_COLORS.fiber}"></span><b>${fmtNumber(n.fiber)} g</b><span>Fibres</span><small>&nbsp;</small></div>
         </div>
+        ${n.details && n.details.length ? `<details class="nut-details"><summary>🔎 Détail par ingrédient</summary>
+          ${n.details.map((x) => `<div class="nut-line"><span>${ingEmoji(x.name)} ${esc(cap(x.name))}</span><span class="muted">${x.grams} g</span><b>${x.kcal} kcal</b></div>`).join("")}
+        </details>` : ""}
         <p class="muted small" style="margin:10px 0 0">≈ Estimation d'après les ingrédients et leurs quantités (valeurs moyennes, type table Ciqual).${n.ai ? " ✨ Certains aliments estimés par l'IA." : ""}${n.unknown && n.unknown.length && !r.nutritionLoading ? ` Non compté : ${esc(n.unknown.join(", "))}.` : ""}</p>
       </div>`;
   }
@@ -4686,7 +4695,7 @@ class FrigoMalinPanel extends HTMLElement {
       ? `<button class="icon-btn" data-action="favorite" aria-label="Favori">${icon(r.favorite ? "star" : "star-outline")}</button>`
       : "";
     const body = `
-      <div class="hero" style="${this._heroBg(r)}">
+      <div class="rhero" style="${this._heroBg(r)}">
         <div class="hero-shade"></div>
         <div class="hero-text">
           ${r.origin === "jow" ? `<span class="hero-badge">🥘 Jow</span>` : ""}
@@ -4857,7 +4866,7 @@ class FrigoMalinPanel extends HTMLElement {
     const badge =
       top.imported === "photo" ? "📖 Lue sur la photo · relisez les quantités" : d.origin === "jow" && top.imported ? "🥘 Importée de Jow · à vérifier" : top.imported ? "🔗 Importée · à vérifier" : "";
     const body = `
-      <div class="hero edit" id="editor-hero" style="${this._heroBg(d)}">
+      <div class="rhero edit" id="editor-hero" style="${this._heroBg(d)}">
         <div class="hero-shade"></div>
         <button class="hero-photo" data-action="editor-image" aria-label="Changer la photo">${icon("image-edit-outline")}</button>
         <div class="hero-text">

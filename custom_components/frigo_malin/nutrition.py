@@ -390,6 +390,7 @@ def compute(
     """
     totals = dict.fromkeys(MACROS, 0.0)
     unknown: list[str] = []
+    lines: list[tuple[str, float, float]] = []
     used_ai = False
     for ing in ingredients or []:
         name = str(ing.get("name") or "").strip()
@@ -405,6 +406,8 @@ def compute(
         weight = grams(ing.get("quantity"), ing.get("unit") or "", food)
         for key in MACROS:
             totals[key] += float(food.get(key, 0)) * weight / 100
+        if weight:
+            lines.append((name, weight, float(food.get("kcal", 0)) * weight / 100))
     portions = max(1, int(servings or 4))
     per = {key: value / portions for key, value in totals.items()}
     return {
@@ -415,6 +418,11 @@ def compute(
         "fiber": _round(per["fiber"]),
         "unknown": unknown,
         "ai": used_ai,
+        # Détail par portion, du plus calorique au moins calorique : pour vérifier le calcul.
+        "details": [
+            {"name": n, "grams": round(g / portions), "kcal": round(k / portions)}
+            for n, g, k in sorted(lines, key=lambda x: -x[2])
+        ],
     }
 
 

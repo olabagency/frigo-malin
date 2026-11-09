@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "frigo_malin"
 # Version de l'intégration. Ne pas modifier à la main : utiliser scripts/bump_version.py.
-VERSION = "1.16.0"
+VERSION = "1.16.1"
 
 # Fournisseurs d'IA
 CONF_PROVIDER = "provider"
