@@ -105,14 +105,6 @@ La V1 laisse la place pour commander les courses en ligne. Le premier prévu est
 
 ## Développement
 
-```bash
-pip install -r requirements_test.txt
-```
-
-```bash
-pytest
-```
-
 ### Publier une nouvelle version
 
 1. Montez la version partout d'un coup (manifest, code Python, panneau, CHANGELOG) :
@@ -123,7 +115,7 @@ pytest
 
    (`patch` pour un correctif, `minor` pour une nouveauté, `major` pour un changement important, ou un numéro précis comme `1.4.0`.)
 2. Complétez la section créée dans `CHANGELOG.md`, committez et poussez sur `main`.
-3. La release `vX.Y.Z` est créée automatiquement sur GitHub dès que le nouveau numéro arrive sur `main` ; HACS la propose alors en mise à jour. Avant de pousser, lancez les tests (`pytest`) et `python3 scripts/check_version.py`.
+3. La release `vX.Y.Z` est créée automatiquement sur GitHub dès que le nouveau numéro arrive sur `main` ; HACS la propose alors en mise à jour. Avant de pousser, vérifiez la cohérence des numéros avec `python3 scripts/check_version.py`.
 
 Si le format des données enregistrées change, augmentez `STORAGE_MINOR_VERSION` (ajout compatible) ou `STORAGE_VERSION` (changement de structure) dans `const.py` et écrivez la conversion dans `store.py`. Pour les réglages de l'intégration, c'est `MINOR_VERSION` / `VERSION` dans `config_flow.py` et `async_migrate_entry` dans `__init__.py`.
 
