@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.16.1";
+const FM_VERSION = "1.16.2";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -865,6 +865,9 @@ select.keep.danger { border-color: var(--fm-error); color: var(--fm-error); font
 .meal .icon-btn { width: 34px; height: 34px; color: var(--fm-text2); }
 .meal { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .meal.lifting { opacity: .35; }
+.meal .grip { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 34px; margin: 6px 0 0 -10px; color: var(--fm-text2); touch-action: none; cursor: grab; }
+.meal .grip ha-icon { --mdc-icon-size: 20px; }
+.meal .name { flex-basis: calc(100% - 30px); }
 .slot.drop { background: var(--fm-soft); border-radius: 12px; box-shadow: inset 0 0 0 2px var(--fm-primary); }
 .drag-ghost {
   position: absolute; z-index: 40; pointer-events: none; transform: translate(-50%, -60%) rotate(-2deg);
@@ -1444,6 +1447,13 @@ class FrigoMalinPanel extends HTMLElement {
     if (!meal || ev.composedPath().some((n) => n.tagName === "BUTTON" && n.classList && n.classList.contains("icon-btn"))) return;
     clearTimeout(this._pressTimer);
     this._press = { meal, x, y };
+    // La poignée ⋮⋮ saisit le repas tout de suite (elle ne fait jamais défiler la page) ;
+    // ailleurs sur le repas, il faut un appui long.
+    if (ev.composedPath().some((n) => n.dataset && n.dataset.grip !== undefined)) {
+      if (ev.cancelable) ev.preventDefault();
+      this._startMealDrag();
+      return;
+    }
     this._pressTimer = setTimeout(() => this._startMealDrag(), 450);
   }
 
@@ -1459,6 +1469,9 @@ class FrigoMalinPanel extends HTMLElement {
     this.shadowRoot.querySelector(".app").appendChild(ghost);
     press.meal.classList.add("lifting");
     this._mealDrag = { id: entry.id, ghost, el: press.meal, target: null };
+    // Pendant le déplacement, la page ne défile plus au doigt (seulement aux bords, par le code).
+    const main = this.shadowRoot.getElementById("main");
+    if (main) main.style.overflowY = "hidden";
     if (navigator.vibrate) navigator.vibrate(25);
     this._moveMealDrag(press.x, press.y);
   }
@@ -1489,8 +1502,9 @@ class FrigoMalinPanel extends HTMLElement {
     const box = main.getBoundingClientRect();
     clearInterval(this._dragScroll);
     if (Math.abs(y - drag.startY) < 24) return;
-    const edge = 56;
-    const speed = y < box.top + edge ? -10 : y > box.bottom - edge ? 10 : 0;
+    const edge = 44;
+    const over = y < box.top + edge ? y - (box.top + edge) : y > box.bottom - edge ? y - (box.bottom - edge) : 0;
+    const speed = Math.max(-14, Math.min(14, Math.round(over / 3)));
     if (speed) {
       this._dragScroll = setInterval(() => {
         main.scrollTop += speed;
@@ -1507,6 +1521,8 @@ class FrigoMalinPanel extends HTMLElement {
     if (!drag) return false;
     this._mealDrag = null;
     clearInterval(this._dragScroll);
+    const main = this.shadowRoot.getElementById("main");
+    if (main) main.style.overflowY = "";
     drag.ghost.remove();
     drag.el.classList.remove("lifting");
     if (drag.target) drag.target.classList.remove("drop");
@@ -4570,7 +4586,7 @@ class FrigoMalinPanel extends HTMLElement {
         <button class="btn tonal" data-action="copy-open">${icon("content-copy")} Reprendre un menu</button>
       </div>
       ${dayTotals.length ? this._tplWeekNutrition(dayTotals) : ""}
-      ${w.entries.length ? `<p class="drag-hint">✋ Maintenez un repas puis glissez-le vers un autre jour pour le déplacer.</p>` : ""}
+      ${w.entries.length ? `<p class="drag-hint">✋ Tenez un repas par ⠿ et glissez-le vers un autre jour. Gardez-le en haut ou en bas de l'écran pour faire défiler.</p>` : ""}
       ${days.join("")}
       <button class="btn big block" data-action="shop-preview" ${w.entries.length ? "" : "disabled"}>${icon("cart-outline")} Liste de courses de la semaine${pending ? ` (${pending} repas)` : ""}</button>`;
   }
@@ -4617,6 +4633,7 @@ class FrigoMalinPanel extends HTMLElement {
           .map((e) => {
             const r = this._recipe(e.recipe_id);
             return `<div class="meal" data-meal="${esc(e.id)}">
+              <span class="grip" data-grip aria-label="Déplacer ce repas" title="Maintenir et glisser">${icon("drag")}</span>
               <button class="name" data-action="meal-open" data-id="${esc(e.id)}">${r ? emojiFor(r.title) + " " : ""}${esc(r ? r.title : "Recette supprimée")}</button>
               ${e.note ? `<div class="note">${/reste/i.test(e.note) ? "♻️" : "📝"} ${esc(e.note)}</div>` : ""}
               <div class="ctrls">

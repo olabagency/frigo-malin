@@ -7,6 +7,15 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.16.2] – 2026-11-09
+
+### Corrigé
+
+- **Déplacer un repas dans la Semaine** fonctionne sur iPhone.
+  - Chaque repas a une poignée ⠿ : on le tient par là et on le glisse, sans que la page défile.
+  - Pendant le déplacement, la page ne défile que si l'on garde le repas tout en haut ou tout en bas de l'écran, d'autant plus vite qu'on s'approche du bord.
+  - L'appui long sur le repas fonctionne toujours.
+
 ## [1.16.1] – 2026-11-09
 
 ### Ajouté
