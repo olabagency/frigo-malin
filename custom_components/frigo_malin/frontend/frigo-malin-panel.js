@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.5.0";
+const FM_VERSION = "1.6.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -242,6 +242,73 @@ const LIB_TYPES = [
   ["breakfast", "☀️", "Petit-déj"], ["soup", "🍲", "Soupes"], ["salad", "🥗", "Salades & bowls"], ["main", "🍽️", "Plats"], ["dessert", "🍰", "Desserts"],
 ];
 const THEME_ICON = Object.fromEntries(LIB_THEMES.map(([k, e]) => [k, e]));
+
+/* Mode cuisine : un emoji selon l'action principale de l'étape. */
+const STEP_EMOJIS = [
+  [/prechauff|enfourn|\bau four\b|gratin|rotir|roti\b/, "♨️"],
+  [/mixe|blender|hache.*robot|robot/, "🌀"],
+  [/sauce|vinaigrette|marinade/, "🥣"],
+  [/rap(e|ez|er)\b|zeste/, "🧀"],
+  [/epluch|emince|coupe|taill|hach|cisel|detaill|tranch|decoup|epepin|evide/, "🔪"],
+  [/egoutt|rince|lave|essor/, "💧"],
+  [/casse.*oeuf|bat(tez|tre)? les oeufs|fouett|monte.*neige/, "🥚"],
+  [/mijot|laisse.*cuire|couvr|frem/, "🫕"],
+  [/fait(es)? (les |la |le |l')?(revenir|dorer|sauter|fondre|griller)|saisi|poele|wok|sauter|dore/, "🍳"],
+  [/bouill|ebullition|eau salee|cuire.*eau|plonge/, "♨️"],
+  [/cuire|cuisson|cuit/, "🔥"],
+  [/melang|remu|incorpor|ajout|verse|delay|enrob|fouet/, "🥄"],
+  [/sale|poivr|assaisonn|epice|rectifi/, "🧂"],
+  [/reserv|refrigerat|au frais|frigo|refroidi/, "❄️"],
+  [/attend|repos|laisse (gonfler|reposer|mariner)|marin/, "⏳"],
+  [/etal|abaiss|garni|dispos|repart|forme|faconn|roule/, "🫓"],
+  [/sert|servez|dress|parsem|decor|deguste/, "🍽️"],
+];
+function stepEmoji(text) {
+  const t = foldText(text);
+  // Le verbe en tête de phrase décrit l'action principale (« Servez… », « Faites revenir… ») : il passe d'abord.
+  const head = t.split(/[^a-z']+/).filter(Boolean).slice(0, 3).join(" ");
+  for (const [re, e] of STEP_EMOJIS) if (re.test(head)) return e;
+  for (const [re, e] of STEP_EMOJIS) if (re.test(t)) return e;
+  return "👩‍🍳";
+}
+
+/* Durée citée dans une étape : « 20 minutes », « 5 à 8 min », « 1 h 30 », « 1 heure ». Renvoie des secondes. */
+function stepDuration(text) {
+  const t = foldText(text);
+  let m = t.match(/(\d+)\s*h(?:eures?)?\s*(\d{1,2})?(?!\w)/);
+  if (m && !/\d+\s*h(?:eures?)?\s*(de|d')/.test(t.slice(m.index, m.index + 12))) {
+    const sec = Number(m[1]) * 3600 + Number(m[2] || 0) * 60;
+    if (sec > 0 && sec <= 12 * 3600) return { seconds: sec, label: m[2] ? `${m[1]} h ${m[2]}` : `${m[1]} h` };
+  }
+  m = t.match(/(\d+)(?:\s*(?:a|-|ou)\s*(\d+))?\s*(min|minutes?|mn)\b/);
+  if (m) {
+    const lo = Number(m[1]);
+    if (lo > 0 && lo <= 600) return { seconds: lo * 60, label: m[2] ? `${lo} à ${m[2]} min` : `${lo} min` };
+  }
+  m = t.match(/(\d+)\s*(secondes?|sec)\b/);
+  if (m && Number(m[1]) > 0) return { seconds: Number(m[1]), label: `${m[1]} s` };
+  return null;
+}
+
+/* Ingrédients de la recette cités dans le texte d'une étape. */
+function stepIngredients(text, ingredients) {
+  const t = " " + foldText(text).replace(/[^a-z0-9 ]+/g, " ") + " ";
+  return ingredients.filter((ing) => {
+    const words = foldText(ing.name).replace(/[^a-z0-9 ]+/g, " ").split(" ").filter((w) => w.length >= 4);
+    const key = words[0];
+    if (!key) return false;
+    const stem = key.replace(/(es|s|x)$/, "");
+    return t.includes(" " + stem);
+  });
+}
+
+const fmtClock = (sec) => {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s2 = String(sec % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${s2}` : `${m}:${s2}`;
+};
 
 const DEFAULT_QUICK = ["Lait", "Pain", "Œufs", "Beurre", "Bananes", "Pommes", "Yaourts", "Café", "Fromage râpé", "Papier toilette"];
 
@@ -644,17 +711,47 @@ ol.steps li::before {
 a.src { color: var(--fm-primary); word-break: break-all; font-size: 13px; }
 
 /* Mode cuisine */
-.cook { background: var(--fm-card); }
-.cook .progress { height: 4px; background: var(--fm-divider); }
-.cook .progress div { height: 100%; background: var(--fm-primary); transition: width .25s; }
-.cook .stepbox { flex: 1; overflow-y: auto; display: flex; flex-direction: column; justify-content: center; padding: 24px 24px; max-width: 820px; margin: 0 auto; width: 100%; }
-.cook .num { color: var(--fm-primary); font-weight: 500; font-size: 15px; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 12px; }
-.cook .txt { font-size: clamp(22px, 5.4vw, 34px); line-height: 1.4; }
-.cook .done { text-align: center; }
-.cook .done .emoji { font-size: 72px; }
-.cook .nav { display: flex; gap: 12px; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); max-width: 820px; margin: 0 auto; width: 100%; }
+.cook { background: var(--fm-bg); }
+.cook .toolbar { background: var(--fm-card); }
+.cook .dots { display: flex; gap: 4px; padding: 10px 16px 6px; max-width: 820px; margin: 0 auto; width: 100%; flex-shrink: 0; }
+.cook .dots button { flex: 1; height: 6px; border-radius: 3px; border: 0; padding: 0; background: var(--fm-divider); }
+.cook .dots button.on { background: var(--fm-primary); }
+.cook .dots button.cur { background: var(--fm-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--fm-primary) 35%, transparent); }
+.cook .timers { display: flex; gap: 8px; overflow-x: auto; padding: 4px 16px 6px; max-width: 820px; margin: 0 auto; width: 100%; flex-shrink: 0; scrollbar-width: none; }
+.cook .timer { display: inline-flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 20px; background: var(--fm-card); border: 1px solid var(--fm-divider); font-weight: 600; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.cook .timer.ring { background: var(--fm-error); color: #fff; border-color: transparent; animation: pulse 1s infinite; }
+.cook .timer .lbl { font-weight: 400; font-size: 12px; opacity: .8; }
+.cook .timer .icon-btn { width: 30px; height: 30px; }
+@keyframes pulse { 50% { transform: scale(1.05); } }
+.cook .stepbox { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 8px 16px 16px; max-width: 820px; margin: 0 auto; width: 100%; }
+.cook .stepcard { background: var(--fm-card); border-radius: 22px; padding: 22px 20px; margin: auto 0; box-shadow: var(--ha-card-box-shadow, 0 2px 10px rgba(0,0,0,.08)); }
+.cook .stephead { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.cook .bigemoji { width: 64px; height: 64px; border-radius: 50%; background: var(--fm-soft); display: flex; align-items: center; justify-content: center; font-size: 36px; flex-shrink: 0; }
+.cook .num { color: var(--fm-primary); font-weight: 600; font-size: 14px; letter-spacing: .05em; text-transform: uppercase; }
+.cook .num small { display: block; color: var(--fm-text2); font-weight: 400; letter-spacing: 0; text-transform: none; font-size: 13px; margin-top: 2px; }
+.cook .txt { font-size: clamp(21px, 5.2vw, 32px); line-height: 1.45; }
+.cook.big .txt { font-size: clamp(27px, 7vw, 42px); }
+.cook .usechips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.cook .usechips .chip { min-height: 38px; font-size: 15px; }
+.cook .usechips .chip b { color: var(--fm-primary); font-weight: 600; }
+.cook .timerbtn { margin-top: 18px; width: 100%; min-height: 54px; font-size: 17px; border-radius: 27px; }
+.cook .nav { display: flex; gap: 12px; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); max-width: 820px; margin: 0 auto; width: 100%; background: var(--fm-bg); }
 .cook .nav .btn { flex: 1; min-height: 64px; font-size: 18px; border-radius: 32px; }
-.cook .ingpanel { border-bottom: 1px solid var(--fm-divider); max-height: 40vh; overflow-y: auto; padding: 4px 24px; }
+.cook .nav .btn.prev { flex: 0 0 64px; padding: 0; }
+.cook .ingpanel { background: var(--fm-card); border-bottom: 1px solid var(--fm-divider); max-height: 45vh; overflow-y: auto; padding: 4px 20px; flex-shrink: 0; }
+.cook .mise h2 { margin: 6px 0 2px; }
+.cook .mise .ready { font-size: 14px; color: var(--fm-text2); margin-bottom: 8px; }
+.cook .mise .metas { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.cook .tick-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 4px; border: 0; border-bottom: 1px solid var(--fm-divider); background: none; text-align: left; font-size: 17px; }
+.cook .tick-row:last-child { border-bottom: 0; }
+.cook .tick-row .box { width: 28px; height: 28px; border-radius: 8px; border: 2px solid var(--fm-divider); display: inline-flex; align-items: center; justify-content: center; color: transparent; flex-shrink: 0; }
+.cook .tick-row.on .box { background: var(--fm-success); border-color: var(--fm-success); color: #fff; }
+.cook .tick-row.on .nm { text-decoration: line-through; color: var(--fm-text2); }
+.cook .tick-row .q { color: var(--fm-primary); font-weight: 600; min-width: 74px; }
+.cook .done { text-align: center; }
+.cook .done .emoji { font-size: 80px; animation: wiggle 1.6s ease-in-out 2; }
+.cook .done .txt { margin: 8px 0 6px; }
+.cook .done .stack { max-width: 360px; margin: 22px auto 0; }
 
 .check { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--fm-divider); }
 .check input { width: 22px; height: 22px; accent-color: var(--fm-primary); flex-shrink: 0; }
@@ -666,6 +763,8 @@ a.src { color: var(--fm-primary); word-break: break-all; font-size: 13px; }
   box-shadow: 0 4px 16px rgba(0,0,0,.25); font-size: 14px; animation: up .2s ease-out;
 }
 .toast.error { background: var(--fm-error); color: #fff; }
+/* Au-dessus des boutons du bas des fenêtres (mode cuisine, réglages…). */
+.toast.high { bottom: calc(100px + env(safe-area-inset-bottom)); }
 .alert { padding: 12px 14px; border-radius: 10px; background: color-mix(in srgb, var(--fm-error) 12%, transparent); color: var(--fm-error); margin-bottom: 12px; font-size: 14px; }
 .info { padding: 12px 14px; border-radius: 10px; background: var(--fm-soft); font-size: 14px; margin-bottom: 12px; }
 
@@ -812,7 +911,7 @@ class FrigoMalinPanel extends HTMLElement {
       const servings = Number(params.get("servings")) || recipe.servings || 4;
       s.stack = [{ type: "recipe", id: recipe.id, servings, confirmDelete: false }];
       if (params.get("cook") === "1") {
-        s.stack.push({ type: "cook", id: recipe.id, servings, step: 0, showIng: false });
+        s.stack.push({ type: "cook", id: recipe.id, servings, step: -1, showIng: false, checked: [] });
         this._requestWakeLock();
       }
     }
@@ -1573,7 +1672,8 @@ class FrigoMalinPanel extends HTMLElement {
       /* Mode cuisine */
       case "cook": {
         const top = this.top;
-        s.stack.push({ type: "cook", id: top.id, draft: top.draft, servings: top.servings, step: 0, showIng: false });
+        // On commence par la mise en place (étape -1).
+        s.stack.push({ type: "cook", id: top.id, draft: top.draft, servings: top.servings, step: -1, showIng: false, checked: [] });
         this._requestWakeLock();
         this._renderOverlay();
         return;
@@ -1583,14 +1683,56 @@ class FrigoMalinPanel extends HTMLElement {
         const top = this.top;
         if (!top || top.type !== "cook") return;
         const total = (this._overlayRecipe()?.steps || []).length;
-        top.step = Math.max(0, Math.min(total, top.step + (action === "cook-next" ? 1 : -1)));
+        top.step = Math.max(-1, Math.min(total, top.step + (action === "cook-next" ? 1 : -1)));
+        top.showIng = false;
         this._renderOverlay();
         return;
       }
+      case "cook-goto":
+        this.top.step = Number(d.step);
+        this._renderOverlay();
+        return;
       case "cook-ing":
         this.top.showIng = !this.top.showIng;
         this._renderOverlay();
         return;
+      case "cook-big":
+        this.top.big = !this.top.big;
+        this._renderOverlay();
+        return;
+      case "cook-check": {
+        const list = this.top.checked;
+        const i = list.indexOf(Number(d.i));
+        if (i >= 0) list.splice(i, 1);
+        else list.push(Number(d.i));
+        this._renderOverlay();
+        return;
+      }
+      case "cook-check-all": {
+        const r = this._overlayRecipe();
+        this.top.checked = this.top.checked.length === r.ingredients.length ? [] : r.ingredients.map((_, i) => i);
+        this._renderOverlay();
+        return;
+      }
+      case "timer-start":
+        this._startTimer(Number(d.seconds), d.label);
+        return;
+      case "timer-stop":
+        this._stopTimer(Number(d.id));
+        return;
+      case "timer-add":
+        this._addToTimer(Number(d.id), 60);
+        return;
+      case "cook-favorite": {
+        const r = this._overlayRecipe();
+        if (r && r.id && !r.favorite) {
+          const res = await this._ws("recipes/patch", { recipe_id: r.id, favorite: true });
+          this._replaceRecipe(res.recipe);
+          this._toast("⭐ Ajoutée aux favoris");
+          this._renderOverlay();
+        }
+        return;
+      }
 
       /* Menu de la semaine */
       case "plan-open":
@@ -2124,6 +2266,98 @@ class FrigoMalinPanel extends HTMLElement {
     }
   }
 
+  /* ---------------- minuteurs du mode cuisine */
+
+  _audio() {
+    // Le son doit être « débloqué » par un geste (iPhone) : on crée le contexte au lancement d'un minuteur.
+    try {
+      if (!this._audioCtx) this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this._audioCtx.state === "suspended") this._audioCtx.resume();
+    } catch (_) {
+      this._audioCtx = null;
+    }
+    return this._audioCtx;
+  }
+
+  _beep() {
+    const ctx = this._audio();
+    if (!ctx) return;
+    for (let i = 0; i < 3; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = 880;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.45;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.4, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      osc.start(t);
+      osc.stop(t + 0.36);
+    }
+  }
+
+  _startTimer(seconds, label) {
+    this._audio();
+    this._timers = this._timers || [];
+    this._timerSeq = (this._timerSeq || 0) + 1;
+    this._timers.push({ id: this._timerSeq, label: label || fmtClock(seconds), end: Date.now() + seconds * 1000, ringing: false });
+    this._toast(`⏲️ Minuteur lancé : ${label || fmtClock(seconds)}`);
+    if (!this._timerTick) this._timerTick = setInterval(() => this._tickTimers(), 1000);
+    this._renderTimers();
+  }
+
+  _stopTimer(id) {
+    this._timers = (this._timers || []).filter((t) => t.id !== id);
+    if (!this._timers.length && this._timerTick) {
+      clearInterval(this._timerTick);
+      this._timerTick = null;
+    }
+    this._renderTimers();
+  }
+
+  _addToTimer(id, seconds) {
+    const t = (this._timers || []).find((x) => x.id === id);
+    if (!t) return;
+    t.end = Math.max(Date.now(), t.end) + seconds * 1000;
+    t.ringing = false;
+    this._renderTimers();
+  }
+
+  _tickTimers() {
+    const now = Date.now();
+    for (const t of this._timers || []) {
+      if (!t.ringing && t.end <= now) {
+        t.ringing = true;
+        this._beep();
+        if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]);
+        this._toast(`⏰ C'est prêt ! Minuteur « ${t.label} » terminé`);
+      } else if (t.ringing && (now - t.end) % 10000 < 1000) {
+        this._beep();
+      }
+    }
+    this._renderTimers();
+  }
+
+  _tplTimers() {
+    const now = Date.now();
+    return (this._timers || [])
+      .map((t) => `<span class="timer ${t.ringing ? "ring" : ""}">
+          ${t.ringing ? "⏰" : "⏲️"} ${t.ringing ? "Prêt !" : fmtClock((t.end - now) / 1000)} <span class="lbl">${esc(t.label)}</span>
+          <button class="icon-btn" data-action="timer-add" data-id="${t.id}" aria-label="Une minute de plus" title="+1 min">${icon("plus")}</button>
+          <button class="icon-btn" data-action="timer-stop" data-id="${t.id}" aria-label="Arrêter le minuteur">${icon("close")}</button>
+        </span>`)
+      .join("");
+  }
+
+  _renderTimers() {
+    const el = this.shadowRoot.getElementById("cook-timers");
+    if (el) {
+      el.innerHTML = this._tplTimers();
+      el.style.display = (this._timers || []).length ? "" : "none";
+    }
+  }
+
   /* ---------------- écran allumé en mode cuisine */
 
   async _requestWakeLock() {
@@ -2197,7 +2431,7 @@ class FrigoMalinPanel extends HTMLElement {
     if (!host) return;
     const t = this.s.toast;
     host.innerHTML = t
-      ? `<div class="toast ${t.error ? "error" : ""}" role="status">${icon(t.error ? "alert-circle-outline" : "check-circle-outline")}<span>${esc(t.message)}</span></div>`
+      ? `<div class="toast ${t.error ? "error" : ""} ${this.s.stack.length ? "high" : ""}" role="status">${icon(t.error ? "alert-circle-outline" : "check-circle-outline")}<span>${esc(t.message)}</span></div>`
       : "";
   }
 
@@ -3168,35 +3402,99 @@ class FrigoMalinPanel extends HTMLElement {
     if (!r) return "";
     const total = r.steps.length;
     const base = r.servings || top.servings || 4;
-    const factor = (top.servings || base) / base;
-    const done = top.step >= total;
-    const pct = total ? Math.round((Math.min(top.step + 1, total) / total) * 100) : 100;
-    return `<div class="sheet cook">
+    const servings = top.servings || base;
+    const factor = servings / base;
+    const step = top.step;
+    const done = step >= total;
+    const checked = top.checked || [];
+    const ingRow = (ing, i, clickable) => {
+      const f = fmtIngredient(ing, factor);
+      const on = checked.includes(i);
+      return clickable
+        ? `<button class="tick-row ${on ? "on" : ""}" data-action="cook-check" data-i="${i}">
+            <span class="box">${icon("check")}</span><span class="ing-emoji">${ingEmoji(ing.name)}</span>
+            <span class="q">${esc(f.amount)}</span><span class="nm grow">${esc(cap(f.name))}</span></button>`
+        : `<li><span class="ing-emoji">${ingEmoji(ing.name)}</span><span class="q">${esc(f.amount)}</span><span>${esc(cap(f.name))}</span></li>`;
+    };
+
+    let content;
+    if (step < 0) {
+      // Mise en place : on sort tout avant de commencer.
+      const time = totalTime(r);
+      content = `<div class="stepcard mise">
+        <div class="stephead"><div class="bigemoji">🧺</div>
+          <div><div class="num">Mise en place<small>Sortez et préparez tout avant de commencer.</small></div></div></div>
+        <h2>${esc(r.title)}</h2>
+        <div class="metas">
+          <span class="tag">👥 ${servings} pers.</span>
+          ${r.prep_time ? `<span class="tag">🔪 ${fmtMinutes(r.prep_time)}</span>` : ""}
+          ${r.cook_time ? `<span class="tag">🔥 ${fmtMinutes(r.cook_time)}</span>` : ""}
+          ${time ? `<span class="tag gold">⏱️ ${fmtMinutes(time)} en tout</span>` : ""}
+          <span class="tag">📝 ${total} étape${total > 1 ? "s" : ""}</span>
+        </div>
+        <div class="row" style="justify-content:space-between">
+          <div class="ready">${checked.length === r.ingredients.length && r.ingredients.length ? "✅ Tout est prêt !" : `✔️ ${checked.length} / ${r.ingredients.length} ingrédients prêts`}</div>
+          <button class="btn text" data-action="cook-check-all">${checked.length === r.ingredients.length ? "Tout décocher" : "Tout cocher"}</button>
+        </div>
+        ${r.ingredients.map((ing, i) => ingRow(ing, i, true)).join("")}
+      </div>`;
+    } else if (done) {
+      content = `<div class="stepcard done">
+        <div class="emoji">🎉</div>
+        <div class="txt">Bon appétit !</div>
+        <p class="muted">« ${esc(r.title)} » est prêt${servings ? ` pour ${servings} personne${servings > 1 ? "s" : ""}` : ""}. 🍽️</p>
+        <div class="stack">
+          ${r.id && !r.favorite ? `<button class="btn tonal block" data-action="cook-favorite">⭐ Ajouter aux favoris</button>` : ""}
+          <button class="btn tonal block" data-action="cook-goto" data-step="0">🔁 Revoir les étapes</button>
+          <button class="btn block big" data-action="close">✅ Terminer</button>
+        </div>
+      </div>`;
+    } else {
+      const text = r.steps[step];
+      const uses = stepIngredients(text, r.ingredients);
+      const dur = stepDuration(text);
+      content = `<div class="stepcard">
+        <div class="stephead"><div class="bigemoji">${stepEmoji(text)}</div>
+          <div class="num">Étape ${step + 1} sur ${total}${step + 1 === total ? "<small>Dernière étape 🏁</small>" : ""}</div></div>
+        <div class="txt">${esc(text)}</div>
+        ${uses.length
+          ? `<div class="usechips">${uses
+              .map((ing) => {
+                const f = fmtIngredient(ing, factor);
+                return `<span class="chip">${ingEmoji(ing.name)} ${f.amount ? `<b>${esc(f.amount)}</b>` : ""} ${esc(f.name)}</span>`;
+              })
+              .join("")}</div>`
+          : ""}
+        ${dur ? `<button class="btn tonal timerbtn" data-action="timer-start" data-seconds="${dur.seconds}" data-label="${esc(`Étape ${step + 1} · ${dur.label}`)}">⏲️ Lancer un minuteur de ${esc(dur.label)}</button>` : ""}
+      </div>`;
+    }
+
+    const dots = r.steps
+      .map((_, i) => `<button class="${i < step ? "on" : ""} ${i === step ? "cur" : ""}" data-action="cook-goto" data-step="${i}" aria-label="Étape ${i + 1}"></button>`)
+      .join("");
+    const next =
+      step < 0
+        ? `<button class="btn" data-action="cook-next">👩‍🍳 C'est parti !</button>`
+        : done
+          ? ""
+          : `<button class="btn" data-action="cook-next">${step + 1 === total ? "🏁 J'ai fini" : `Suivant ${icon("chevron-right")}`}</button>`;
+    return `<div class="sheet cook ${top.big ? "big" : ""}">
       <div class="toolbar">
         <button class="icon-btn" data-action="close" aria-label="Quitter le mode cuisine">${icon("close")}</button>
-        <div class="title">${esc(r.title)}</div>
-        <button class="icon-btn" data-action="cook-ing" aria-label="Ingrédients">${icon(top.showIng ? "format-list-checks" : "format-list-bulleted")}</button>
+        <div class="title">👩‍🍳 ${esc(r.title)}</div>
+        <button class="icon-btn" data-action="cook-big" aria-label="Taille du texte" title="Taille du texte">${icon(top.big ? "format-font-size-decrease" : "format-font-size-increase")}</button>
+        <button class="icon-btn" data-action="cook-ing" aria-label="Ingrédients" title="Ingrédients">${icon(top.showIng ? "close-box-outline" : "basket-outline")}</button>
       </div>
-      <div class="progress"><div style="width:${pct}%"></div></div>
-      ${top.showIng
-        ? `<div class="ingpanel"><ul class="ings">${r.ingredients
-            .map((ing) => {
-              const f = fmtIngredient(ing, factor);
-              return `<li><span class="ing-emoji">${ingEmoji(ing.name)}</span><span class="q">${esc(f.amount)}</span><span>${esc(cap(f.name))}</span></li>`;
-            })
-            .join("")}</ul></div>`
-        : ""}
-      <div class="stepbox">
-        ${done
-          ? `<div class="done"><div class="emoji">🍽️</div><div class="txt">Bon appétit !</div></div>`
-          : `<div class="num">Étape ${top.step + 1} sur ${total}</div><div class="txt">${esc(r.steps[top.step])}</div>`}
-      </div>
-      <div class="nav">
-        <button class="btn tonal" data-action="cook-prev" ${top.step === 0 ? "disabled" : ""}>${icon("chevron-left")} Précédent</button>
-        ${done
-          ? `<button class="btn" data-action="close">Terminer</button>`
-          : `<button class="btn" data-action="cook-next">${top.step + 1 === total ? "Terminé" : "Suivant"} ${icon("chevron-right")}</button>`}
-      </div>
+      ${step >= 0 && !done ? `<div class="dots">${dots}</div>` : ""}
+      <div class="timers" id="cook-timers" style="${(this._timers || []).length ? "" : "display:none"}">${this._tplTimers()}</div>
+      ${top.showIng ? `<div class="ingpanel"><ul class="ings">${r.ingredients.map((ing, i) => ingRow(ing, i, false)).join("")}</ul></div>` : ""}
+      <div class="stepbox">${content}</div>
+      ${done
+        ? ""
+        : `<div class="nav">
+            ${step >= 0 ? `<button class="btn tonal prev" data-action="cook-prev" aria-label="Étape précédente">${icon("chevron-left")}</button>` : ""}
+            ${next}
+          </div>`}
     </div>`;
   }
 

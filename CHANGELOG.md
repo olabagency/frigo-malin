@@ -7,6 +7,23 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.6.0] – 2026-11-09
+
+### Ajouté
+
+- **Mode cuisine repensé** :
+  - 🧺 **Mise en place** avant de commencer : portions, temps, nombre d'étapes, et la liste des ingrédients à cocher au fur et à mesure qu'on les sort.
+  - Chaque étape s'affiche en grand avec un **emoji selon l'action** (🔪 couper, 🍳 faire revenir, ♨️ four, 🥄 mélanger, 🫕 mijoter, 💧 égoutter, 🌀 mixer, 🍽️ servir…).
+  - Les **ingrédients utilisés dans l'étape** apparaissent sous le texte, avec leurs quantités pour le bon nombre de personnes.
+  - **⏲️ Minuteur en un appui** quand l'étape indique une durée (« 20 minutes », « 5 à 8 min », « 1 h 30 ») : plusieurs minuteurs en même temps, +1 min, sonnerie et vibration à la fin.
+  - Barre de progression : on touche une étape pour y aller directement.
+  - Bouton **A+** pour agrandir le texte, à lire de loin.
+  - Écran de fin 🎉 avec « Ajouter aux favoris » et « Revoir les étapes ».
+
+### Corrigé
+
+- Les messages ne passent plus par-dessus les boutons du bas des fenêtres.
+
 ## [1.5.0] – 2026-11-09
 
 ### Ajouté
