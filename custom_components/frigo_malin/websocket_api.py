@@ -233,6 +233,7 @@ def ws_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, m
             "shopping_list": _shopping_info(hass, data),
             "drives": [{"key": key, "name": cls.name} for key, cls in CONNECTORS.items()],
             "settings": data.store.settings,
+            "usage": data.store.usage_this_month(),
             "is_admin": connection.user.is_admin,
             "entry_id": data.entry.entry_id,
         },
@@ -595,6 +596,7 @@ def ws_shopping_suggestions(
 def ws_settings_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     data = _data(hass)
     settings = data.store.save_settings(msg["settings"])
+    data.ai.mode = settings.get("ai_mode", "economy")
     connection.send_result(
         msg["id"],
         {"settings": settings, "default_servings": _servings_default(data), "shopping_list": _shopping_info(hass, data)},

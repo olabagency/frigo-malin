@@ -79,6 +79,41 @@ def _image_part_openai(image_b64: str, mime: str) -> dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}}
 
 
+# Niveau de modèle par tâche (mode « économique ») : léger, intermédiaire, ou le modèle choisi (haut de gamme).
+TASK_TIERS = {
+    "detect": "light",  # reconnaître les aliments sur une photo du frigo
+    "ideas": "light",  # idées de recettes avec ce qu'il y a
+    "import": "mid",  # lire une page de recette
+    "library": "mid",  # nouvelles idées pour la bibliothèque
+    "plan": "top",  # planifier la semaine
+    "recipe": "top",  # écrire les recettes du menu
+    "photo": "top",  # lire une recette photographiée (manuscrite…)
+}
+TIER_MODELS = {
+    PROVIDER_ANTHROPIC: {"light": "claude-haiku-5-5", "mid": "claude-sonnet-5-5"},
+    PROVIDER_OPENAI: {"light": "gpt-5-mini", "mid": "gpt-5-mini"},
+}
+# Prix en dollars par million de jetons (entrée, sortie), pour estimer la dépense.
+PRICES = {
+    "claude-fable-5-1": (10, 50),
+    "claude-opus-5-5": (4, 20),
+    "claude-opus-5": (5, 25),
+    "claude-sonnet-5-5": (2, 10),
+    "claude-sonnet-5": (2, 10),
+    "claude-haiku-5-5": (0.10, 0.50),
+    "gpt-5": (1.25, 10),
+    "gpt-5-mini": (0.25, 2),
+    "gpt-5-nano": (0.05, 0.40),
+}
+DEFAULT_PRICE = (5, 25)
+
+
+def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Coût estimé d'une demande, en dollars."""
+    price_in, price_out = PRICES.get(model, DEFAULT_PRICE)
+    return (input_tokens * price_in + output_tokens * price_out) / 1_000_000
+
+
 class AIClient:
     """Client minimal pour les deux fournisseurs."""
 
@@ -87,6 +122,29 @@ class AIClient:
         self.provider = provider
         self._api_key = api_key
         self.model = model or DEFAULT_MODELS[provider]
+        # « economy » : un modèle adapté à chaque tâche ; « single » : toujours self.model.
+        self.mode = "economy"
+        # Appelé après chaque demande : (tâche, modèle, coût en dollars).
+        self.on_usage: Any = None
+
+    def model_for(self, task: str) -> str:
+        if self.mode != "economy":
+            return self.model
+        tier = TASK_TIERS.get(task, "top")
+        return TIER_MODELS.get(self.provider, {}).get(tier, self.model)
+
+    def _record(self, task: str, model: str, usage: dict[str, Any] | None) -> None:
+        if not usage or not self.on_usage:
+            return
+        input_tokens = sum(
+            int(usage.get(k) or 0)
+            for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "prompt_tokens")
+        )
+        output_tokens = int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
+        try:
+            self.on_usage(task, model, estimate_cost(model, input_tokens, output_tokens))
+        except Exception:  # noqa: BLE001 - le suivi des dépenses ne doit jamais bloquer
+            _LOGGER.debug("Suivi des dépenses impossible", exc_info=True)
 
     # ------------------------------------------------------------------ bas niveau
 
@@ -148,23 +206,26 @@ class AIClient:
         images: list[tuple[str, str]] | None = None,
         max_tokens: int = 16000,
         timeout: aiohttp.ClientTimeout = TIMEOUT,
+        task: str = "plan",
     ) -> Any:
         """Envoie une demande et renvoie le JSON de la réponse."""
+        model = self.model_for(task)
         pictures = list(images or []) + ([image] if image else [])
         if self.provider == PROVIDER_ANTHROPIC:
             content: list[dict[str, Any]] = [_image_part_anthropic(*pic) for pic in pictures]
             content.append({"type": "text", "text": prompt})
             payload: dict[str, Any] = {
-                "model": self.model,
+                "model": model,
                 "max_tokens": max_tokens,
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": content}],
             }
             beta = None
-            if self.model in _ANTHROPIC_FALLBACK_MODELS:
+            if model in _ANTHROPIC_FALLBACK_MODELS:
                 payload["fallbacks"] = "default"
                 beta = "server-side-fallback-2026-07-01"
             data = await self._post(f"{ANTHROPIC_URL}/messages", self._anthropic_headers(beta), payload, timeout)
+            self._record(task, model, data.get("usage"))
             if data.get("stop_reason") == "max_tokens":
                 _LOGGER.warning("Réponse de l'IA coupée (limite de longueur atteinte)")
             if data.get("stop_reason") == "refusal":
@@ -174,7 +235,7 @@ class AIClient:
             user_content: list[dict[str, Any]] = [_image_part_openai(*pic) for pic in pictures]
             user_content.append({"type": "text", "text": prompt})
             payload = {
-                "model": self.model,
+                "model": model,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_content},
@@ -183,6 +244,7 @@ class AIClient:
                 "max_completion_tokens": max_tokens,
             }
             data = await self._post(f"{OPENAI_URL}/chat/completions", self._openai_headers(), payload, timeout)
+            self._record(task, model, data.get("usage"))
             choice = (data.get("choices") or [{}])[0]
             message = choice.get("message") or {}
             if message.get("refusal"):
@@ -200,7 +262,7 @@ class AIClient:
     # ------------------------------------------------------------------ usages
 
     async def detect_ingredients(self, image_b64: str, mime: str) -> list[dict[str, str]]:
-        data = await self._complete(DETECT_PROMPT, (image_b64, mime))
+        data = await self._complete(DETECT_PROMPT, (image_b64, mime), task="detect")
         result = []
         seen = set()
         for item in data.get("ingredients", []) if isinstance(data, dict) else []:
@@ -234,7 +296,7 @@ class AIClient:
         if notes.strip():
             prompt += f"Envies pour cette fois : {notes.strip()}\n"
         prompt += f"\nRéponds avec ce JSON :\n{RECIPE_SCHEMA}"
-        data = await self._complete(prompt)
+        data = await self._complete(prompt, task="ideas")
         recipes = data.get("recipes", []) if isinstance(data, dict) else []
         return [clean_ai_recipe(r) for r in recipes if isinstance(r, dict) and r.get("title")]
 
@@ -245,7 +307,7 @@ class AIClient:
             "Si la page ne contient pas de recette, renvoie {\"recipes\": []}.\n\n"
             f"Réponds avec ce JSON (une seule recette) :\n{RECIPE_SCHEMA}\n\n--- PAGE ---\n{page_text}"
         )
-        data = await self._complete(prompt)
+        data = await self._complete(prompt, task="import")
         recipes = data.get("recipes", []) if isinstance(data, dict) else []
         if not recipes:
             raise AIError("Aucune recette trouvée sur cette page.")
@@ -279,13 +341,13 @@ class AIClient:
         if household:
             prompt += f"\nProfil du foyer :\n{household}\n"
         prompt += f"\nRéponds avec ce JSON :\n{RECIPE_SCHEMA}"
-        data = await self._complete(prompt)
+        data = await self._complete(prompt, task="library")
         recipes = data.get("recipes", []) if isinstance(data, dict) else []
         return [clean_ai_recipe(r) for r in recipes if isinstance(r, dict) and r.get("title")]
 
     async def recipe_from_photos(self, images: list[tuple[str, str]]) -> dict[str, Any]:
         """Lit une recette photographiée (livre, fiche manuscrite…)."""
-        data = await self._complete(PHOTO_PROMPT, images=images)
+        data = await self._complete(PHOTO_PROMPT, images=images, task="photo")
         recipes = data.get("recipes", []) if isinstance(data, dict) else []
         if not recipes or not recipes[0].get("title"):
             raise AIError("Je ne trouve pas de recette sur cette photo. Essayez avec une photo plus nette, bien à plat.")
@@ -353,7 +415,7 @@ class AIClient:
    "leftovers_from": null, "note": "", "estimated_cost": 7.5}]}
 slot vaut "lunch" (midi) ou "dinner" (soir). leftovers_from vaut null ou {"date": "...", "slot": "..."}.""",
         ]
-        data = await self._complete("\n".join(lines), max_tokens=32000, timeout=LONG_TIMEOUT)
+        data = await self._complete("\n".join(lines), max_tokens=32000, timeout=LONG_TIMEOUT, task="plan")
         if not isinstance(data, dict):
             raise AIError("La réponse de l'IA était illisible. Réessayez.")
         wanted = {(s["date"], s["slot"]) for s in slots}

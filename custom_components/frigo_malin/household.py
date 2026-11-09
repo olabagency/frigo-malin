@@ -90,6 +90,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "servings": None,
     # Liste de courses choisie dans l'app (None : automatique).
     "shopping_entity": None,
+    # IA : « economy » (un modèle adapté à chaque tâche) ou « single » (le modèle des options partout).
+    "ai_mode": "economy",
 }
 
 
@@ -156,6 +158,7 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         "stores": [normalize_store(s) for s in raw.get("stores") or [] if isinstance(s, dict)][:10],
         "store_reminder": bool(raw.get("store_reminder", True)),
         "servings": _int(raw.get("servings"), 1, 20, None) if raw.get("servings") not in (None, "") else None,
+        "ai_mode": raw.get("ai_mode") if raw.get("ai_mode") in ("economy", "single") else "economy",
         "shopping_entity": raw.get("shopping_entity")
         if isinstance(raw.get("shopping_entity"), str) and raw["shopping_entity"].startswith("todo.")
         else None,

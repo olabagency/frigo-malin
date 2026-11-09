@@ -66,6 +66,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: FrigoConfigEntry) -> boo
         entry.data[CONF_API_KEY],
         options.get(CONF_MODEL),
     )
+    ai.mode = store.settings.get("ai_mode", "economy")
+    ai.on_usage = lambda _task, _model, cost: store.record_usage(cost)
     entry.runtime_data = FrigoData(entry=entry, store=store, ai=ai)
     hass.data[DOMAIN] = entry.runtime_data
 

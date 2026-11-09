@@ -143,6 +143,7 @@ async def test_fridge_and_import(hass: HomeAssistant, hass_ws_client, aioclient_
         "https://api.anthropic.com/v1/messages",
         json={
             "stop_reason": "end_turn",
+            "usage": {"input_tokens": 1_000_000, "output_tokens": 100_000},
             "content": [
                 {"type": "thinking", "thinking": ""},
                 {"type": "text", "text": json.dumps({"ingredients": [{"name": "tomates", "amount": "4"}, {"name": "Tomates"}]})},
@@ -152,10 +153,14 @@ async def test_fridge_and_import(hass: HomeAssistant, hass_ws_client, aioclient_
     detected = await ws("fridge/detect", image="aGVsbG8=", mime="image/jpeg")
     assert detected["success"], detected
     assert detected["result"]["ingredients"] == [{"name": "tomates", "amount": "4"}]
+    # 1 M de jetons en entrée et 100 k en sortie avec Haiku : 0,15 $ ≈ 0,14 €.
+    usage = (await ws("config"))["result"]["usage"]
+    assert usage == {"eur": 0.14, "calls": 1}
     sent = aioclient_mock.mock_calls[-1][2]
-    assert sent["model"] == "claude-opus-5-5"
+    # Mode économique : la photo du frigo passe par le modèle léger (sans repli serveur, réservé aux grands modèles).
+    assert sent["model"] == "claude-haiku-5-5"
     assert sent["messages"][0]["content"][0]["type"] == "image"
-    assert sent["fallbacks"] == "default"
+    assert "fallbacks" not in sent
 
     aioclient_mock.clear_requests()
     aioclient_mock.post(

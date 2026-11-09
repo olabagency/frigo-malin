@@ -1427,6 +1427,14 @@ class FrigoMalinPanel extends HTMLElement {
       case "settings-open":
         s.stack.push({ type: "settings", draft: clone(this.settings) });
         this._renderOverlay();
+        // Dépense IA à jour.
+        this._ws("config")
+          .then((cfg) => {
+            s.config.usage = cfg.usage;
+            const el = this.shadowRoot.getElementById("ai-usage");
+            if (el) el.innerHTML = this._tplUsage();
+          })
+          .catch(() => {});
         return;
       case "set-servings":
         this.top.draft.servings = d.value ? Number(d.value) : null;
@@ -2942,6 +2950,16 @@ class FrigoMalinPanel extends HTMLElement {
       <label class="field"><span>Autres consignes pour l'IA</span>
         <textarea class="input" rows="3" placeholder="Ex. : pas de coriandre, poisson le vendredi, plats qui se réchauffent pour le midi…" data-model="top.draft.notes">${esc(d.notes)}</textarea></label>
 
+      <div class="set-sec">${bubble("robot-outline", COLORS.indigo)}<h3>Intelligence artificielle</h3></div>
+      <div class="segmented">
+        <button class="${d.ai_mode !== "single" ? "on" : ""}" data-action="set" data-path="top.draft.ai_mode" data-value="economy">💡 Économique</button>
+        <button class="${d.ai_mode === "single" ? "on" : ""}" data-action="set" data-path="top.draft.ai_mode" data-value="single">🎯 Un seul modèle</button>
+      </div>
+      <p class="muted small">${d.ai_mode === "single"
+        ? `Toutes les demandes utilisent le modèle choisi dans les options de l'intégration (${esc((this.s.config && this.s.config.model) || "")}).`
+        : "Le modèle le plus léger pour la photo du frigo et les idées, un modèle intermédiaire pour lire une page ou trouver des idées saines, le plus puissant seulement pour planifier la semaine et lire une recette photographiée."}</p>
+      <div class="info" id="ai-usage">${this._tplUsage()}</div>
+
       <div class="set-sec">${bubble("store-outline", COLORS.teal)}<h3>Magasins</h3></div>
       <p class="muted small" style="margin-top:0">Rangez les rayons dans l'ordre de votre magasin. Reliez-le à une zone de Home Assistant pour recevoir la liste sur votre téléphone en arrivant.</p>
       ${d.stores
@@ -2955,6 +2973,12 @@ class FrigoMalinPanel extends HTMLElement {
       ${this._tplSwitch("top.draft.store_reminder", d.store_reminder, "🔔 Rappel en arrivant au magasin", zones.length ? "Notification sur le téléphone de la personne qui arrive, si la liste n'est pas vide." : "Créez d'abord une zone pour votre magasin dans Paramètres → Zones.")}`;
     const footer = `<button class="btn grow big" data-action="settings-save">${icon("content-save-outline")} Enregistrer</button>`;
     return this._tplSheet("Réglages du foyer", body, footer);
+  }
+
+  _tplUsage() {
+    const u = (this.s.config && this.s.config.usage) || { eur: 0, calls: 0 };
+    const month = new Date().toLocaleDateString("fr-FR", { month: "long" });
+    return `💶 Dépense IA en ${month} : <b>≈ ${fmtNumber(u.eur).replace(/^0$/, "0")} €</b> (${u.calls} demande${u.calls > 1 ? "s" : ""}). <span class="muted small">Estimation d'après les tarifs publics ; la facture exacte est chez votre fournisseur.</span>`;
   }
 
   _tplMember(top) {

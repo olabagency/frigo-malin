@@ -65,6 +65,8 @@ class FrigoStore:
         self.settings: dict[str, Any] = normalize_settings(None)
         # Articles de la liste de courses intégrée (todo.frigo_malin_courses).
         self.shopping_items: list[dict[str, Any]] = []
+        # Dépenses d'IA estimées par mois : {"2026-11": {"usd": 0.42, "calls": 12}}.
+        self.usage: dict[str, dict[str, float]] = {}
         self._listeners: list[Callable[[], None]] = []
 
     async def async_load(self) -> None:
@@ -75,6 +77,7 @@ class FrigoStore:
         self.shopping_history = data.get("shopping_history", {})
         self.settings = normalize_settings(data.get("settings"))
         self.shopping_items = data.get("shopping_items", [])
+        self.usage = data.get("usage", {})
 
     def set_last_version(self, version: str) -> None:
         self.last_version = version
@@ -88,7 +91,23 @@ class FrigoStore:
             "shopping_history": self.shopping_history,
             "settings": self.settings,
             "shopping_items": self.shopping_items,
+            "usage": self.usage,
         }
+
+    def record_usage(self, cost_usd: float) -> None:
+        month = dt_util.now().strftime("%Y-%m")
+        entry = self.usage.setdefault(month, {"usd": 0.0, "calls": 0})
+        entry["usd"] = round(entry["usd"] + cost_usd, 6)
+        entry["calls"] += 1
+        # On garde un an d'historique.
+        for old in sorted(self.usage)[:-12]:
+            self.usage.pop(old)
+        self._store.async_delay_save(self._data, 5)
+
+    def usage_this_month(self) -> dict[str, float]:
+        entry = self.usage.get(dt_util.now().strftime("%Y-%m"), {"usd": 0.0, "calls": 0})
+        # Estimation en euros (1 $ ≈ 0,92 €).
+        return {"eur": round(entry["usd"] * 0.92, 2), "calls": int(entry["calls"])}
 
     def save_shopping_items(self) -> None:
         self._save()
