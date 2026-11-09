@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "frigo_malin"
 # Version de l'intégration. Ne pas modifier à la main : utiliser scripts/bump_version.py.
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 
 # Fournisseurs d'IA
 CONF_PROVIDER = "provider"
@@ -32,7 +32,7 @@ DEFAULT_SERVINGS = 4
 
 # Panneau
 PANEL_URL_PATH = "frigo-malin"
-PANEL_TITLE = "Frigo Malin"
+PANEL_TITLE = "Frigo Malin par Adri"
 PANEL_ICON = "mdi:fridge-outline"
 PANEL_COMPONENT = "frigo-malin-panel"
 STATIC_URL = "/frigo_malin_static"

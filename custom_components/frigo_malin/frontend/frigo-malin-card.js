@@ -139,7 +139,7 @@ if (!customElements.get("frigo-malin-card")) {
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: "frigo-malin-card",
-    name: "Frigo Malin – Ce soir on mange",
+    name: "Frigo Malin par Adri – Ce soir on mange",
     description: "Le prochain repas du menu, avec sa photo et un bouton pour cuisiner.",
     preview: true,
   });

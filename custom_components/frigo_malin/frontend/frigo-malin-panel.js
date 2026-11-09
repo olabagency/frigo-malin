@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.6.0";
+const FM_VERSION = "1.7.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -130,10 +130,10 @@ const FOOD_EMOJIS = [
   [/fromage blanc|lait|creme|yaourt|yogourt/, "🥛"],
   [/fromage|emmental|gruyere|comte|mozzarella|parmesan|chevre|feta|camembert|raclette|ricotta|mascarpone/, "🧀"],
   [/beurre/, "🧈"], [/jambon|lardon|bacon|chorizo|saucisson/, "🥓"],
-  [/poulet|dinde|volaille|canard/, "🍗"], [/boeuf|steak|veau|agneau|porc|viande|hache/, "🥩"], [/saucisse|merguez/, "🌭"],
+  [/poulet|dinde|volaille|canard/, "🍗"], [/boeuf|steak|veau|agneau|porc|viande|tartare/, "🥩"], [/capre/, "🫒"], [/saucisse|merguez/, "🌭"],
   [/crevette|gambas/, "🦐"], [/saumon|thon|cabillaud|poisson|truite|sardine|maquereau|colin/, "🐟"], [/moule|huitre|coquillage/, "🦪"],
   [/pain|baguette|brioche/, "🥖"], [/riz|risotto/, "🍚"], [/pate|spaghetti|tagliatelle|penne|lasagne|nouille|coquillette/, "🍝"],
-  [/farine|semoule|ble|avoine|quinoa|boulgour/, "🌾"], [/sucre|miel|sirop/, "🍯"], [/chocolat|cacao/, "🍫"],
+  [/farine|semoule|ble|avoine|quinoa|boulgour/, "🌾"], [/sucre|miel|sirop/, "🍯"], [/moutarde/, "🟡"], [/ketchup|sauce worcester|worcestershire|tabasco/, "🫙"], [/chocolat|cacao/, "🍫"],
   [/huile|olive/, "🫒"], [/persil|basilic|coriandre|menthe|ciboulette|thym|romarin|herbe|aneth|estragon|laurier/, "🌿"],
   [/\bsel\b|poivre|epice|cumin|curry|paprika|cannelle|muscade/, "🧂"], [/\bvin\b|biere/, "🍷"], [/\beau\b|bouillon/, "💧"],
   [/haricot|lentille|pois|feve/, "🫘"], [/noix|noisette|amande|cacahuete|pistache/, "🥜"], [/gingembre/, "🫚"],
@@ -153,7 +153,7 @@ const foldText = (text) =>
   String(text || "").toLowerCase().replace(/œ/g, "oe").replace(/æ/g, "ae").normalize("NFD").replace(/[̀-ͯ]/g, "");
 
 function foodEmoji(text) {
-  const t = foldText(text);
+  const t = foldText(String(text || "").replace(/\([^)]*\)/g, " "));
   for (const [re, emoji] of FOOD_EMOJIS) if (re.test(t)) return emoji;
   return "";
 }
@@ -188,7 +188,7 @@ const AISLE_RULES = [
   ["epicerie", /lait de coco|en boite|pois chiche|haricots? (rouges?|blancs?)|concentre|coulis|sauce tomate|pelees|concassees|cornichon|olive|capre|thon\b(?! frais)/],
   ["pain", /\bpain|baguette|brioche|croissant|viennoiserie|biscotte|tortilla|\bwrap/],
   ["frais", /\blait\b|creme|yaourt|yogourt|fromage|emmental|gruyere|comte|mozzarella|parmesan|chevre|feta|camembert|raclette|ricotta|mascarpone|beurre|\boeuf|margarine|skyr|petits? suisses?|pate (brisee|feuilletee|sablee|a pizza)|gnocchi|tofu|houmous|traiteur/],
-  ["viande", /poulet|dinde|volaille|canard|boeuf|steak|veau|agneau|porc|viande|hache|saucisse|merguez|jambon|lardon|bacon|chorizo|saucisson|crevette|gambas|saumon|cabillaud|poisson|truite|sardine|maquereau|colin|moule|huitre|escalope|\broti|\bcote|cuisse|thon frais|lapin/],
+  ["viande", /poulet|dinde|volaille|canard|boeuf|steak|veau|agneau|porc|viande|saucisse|merguez|jambon|lardon|bacon|chorizo|saucisson|crevette|gambas|saumon|cabillaud|poisson|truite|sardine|maquereau|colin|moule|huitre|escalope|\broti|\bcote|cuisse|thon frais|lapin/],
   ["fruits", /tomate|carotte|pomme|patate|oignon|echalote|\bail\b|champignon|courgette|concombre|poivron|piment|aubergine|brocoli|\bchou|salade|laitue|epinard|roquette|mache|poireau|blette|\bmais\b|avocat|citron|orange|clementine|mandarine|banane|fraise|framboise|myrtille|cerise|raisin|peche|abricot|nectarine|poire|ananas|mangue|kiwi|melon|pasteque|legume|fruit|persil|basilic|coriandre|menthe|ciboulette|thym|romarin|aneth|gingembre|radis|navet|celeri|fenouil|asperge|haricots? verts?|petits? pois|courge|potiron|butternut|betterave|artichaut|figue|prune|grenade|endive/],
   ["epicerie", /farine|sucre|\bsel\b|poivre|huile|vinaigre|\briz\b|pates?\b|spaghetti|tagliatelle|penne|lasagne|nouille|coquillette|semoule|quinoa|boulgour|lentille|haricot|conserve|sauce|moutarde|ketchup|mayonnaise|epice|cumin|curry|paprika|cannelle|muscade|bouillon|chocolat|cacao|cafe|\bthe\b|cereale|biscuit|miel|confiture|levure|maizena|fecule|noix|noisette|amande|cacahuete|pistache|chips|compote|puree|soupe|vanille|herbes de provence/],
 ];
@@ -384,6 +384,8 @@ input, textarea, select { font: inherit; color: var(--fm-text); }
   box-sizing: content-box;
   border-bottom: var(--app-header-border-bottom, none);
 }
+.toolbar .app-title { line-height: 1.05; }
+.toolbar .app-title small { display: block; font-size: 12px; opacity: .75; font-weight: 400; letter-spacing: .02em; }
 .toolbar .title { font-size: 20px; font-weight: 400; margin-left: 12px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .icon-btn {
   width: 44px; height: 44px; border-radius: 50%; border: 0; background: transparent;
@@ -482,6 +484,17 @@ select.input { appearance: auto; }
 .chips.scroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
 .chips.scroll::-webkit-scrollbar { display: none; }
 .chips.scroll .chip { flex-shrink: 0; }
+
+/* Courses : barre d'ajout rapide compacte, qui reste en haut pendant le défilement */
+.quickbar { position: sticky; top: -16px; z-index: 3; margin: -16px -16px 6px; padding: 12px 16px 8px; background: var(--fm-bg); border-bottom: 1px solid var(--fm-divider); }
+.qb-field { display: flex; align-items: center; gap: 6px; height: 46px; padding: 0 4px 0 14px; border-radius: 23px; background: var(--fm-card); border: 1px solid var(--fm-divider); }
+.qb-field:focus-within { border-color: var(--fm-primary); box-shadow: 0 0 0 1px var(--fm-primary); }
+.qb-field > ha-icon { color: var(--fm-text2); --mdc-icon-size: 20px; }
+.qb-field input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font-size: 16px; color: var(--fm-text); height: 100%; }
+.qb-add { width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--fm-primary); color: var(--fm-on-primary); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.quickbar .chips { margin-top: 8px; gap: 6px; }
+.quickbar .chip { min-height: 30px; padding: 0 10px; font-size: 13px; }
+.quickbar + #shop-list .list-head:first-child { margin-top: 8px; }
 
 /* Courses */
 .quickbox .row { margin-bottom: 10px; }
@@ -804,6 +817,8 @@ class FrigoMalinPanel extends HTMLElement {
     this.shadowRoot.addEventListener("touchmove", (ev) => this._onTouchMove(ev), { passive: false });
     this.shadowRoot.addEventListener("touchend", (ev) => this._onTouchEnd(ev), { passive: true });
     this.shadowRoot.addEventListener("focusout", (ev) => this._onFocusOut(ev));
+    // L'iPhone coupe le maintien de l'écran allumé à chaque mise en veille : on le redemande au retour.
+    document.addEventListener("visibilitychange", () => this._onVisibility());
   }
 
   _freshFridge(servings) {
@@ -884,6 +899,7 @@ class FrigoMalinPanel extends HTMLElement {
     this._render();
     this._subscribeList();
     this._loadSuggestions();
+    if (this._restoreCookSession()) this._render();
     this._applyRoute();
     if (!this._onLocation) {
       this._onLocation = () => setTimeout(() => this._applyRoute(), 0);
@@ -906,6 +922,7 @@ class FrigoMalinPanel extends HTMLElement {
     }
     const store = params.get("store");
     if (store && (this.settings.stores || []).some((x) => x.id === store)) this._pickStore(store);
+    if (params.get("resume") === "cook" && !s.stack.some((x) => x.type === "cook")) this._restoreCookSession();
     const recipe = this._recipe(params.get("recipe"));
     if (recipe) {
       const servings = Number(params.get("servings")) || recipe.servings || 4;
@@ -1319,6 +1336,7 @@ class FrigoMalinPanel extends HTMLElement {
         if (this.top && this.top.type === "cook") this._releaseWakeLock();
         s.stack.pop();
         this._renderOverlay();
+        this._saveCookSession();
         return;
 
       /* Frigo */
@@ -1718,10 +1736,10 @@ class FrigoMalinPanel extends HTMLElement {
         this._startTimer(Number(d.seconds), d.label);
         return;
       case "timer-stop":
-        this._stopTimer(Number(d.id));
+        this._stopTimer(d.id);
         return;
       case "timer-add":
-        this._addToTimer(Number(d.id), 60);
+        this._addToTimer(d.id, 60);
         return;
       case "cook-favorite": {
         const r = this._overlayRecipe();
@@ -1810,7 +1828,7 @@ class FrigoMalinPanel extends HTMLElement {
         this.s.list.loaded = false;
         this._subscribeList();
       }
-      if (this.s.list.storeId && !res.settings.stores.some((x) => x.id === this.s.list.storeId)) this._pickStore(null);
+      if (this.s.list.storeId && this.s.list.storeId !== "standard" && !res.settings.stores.some((x) => x.id === this.s.list.storeId)) this._pickStore(null);
       this.s.stack.pop();
       this._toast("Réglages enregistrés");
       this._render();
@@ -2297,14 +2315,34 @@ class FrigoMalinPanel extends HTMLElement {
     }
   }
 
-  _startTimer(seconds, label) {
+  async _startTimer(seconds, label) {
     this._audio();
     this._timers = this._timers || [];
-    this._timerSeq = (this._timerSeq || 0) + 1;
-    this._timers.push({ id: this._timerSeq, label: label || fmtClock(seconds), end: Date.now() + seconds * 1000, ringing: false });
-    this._toast(`⏲️ Minuteur lancé : ${label || fmtClock(seconds)}`);
-    if (!this._timerTick) this._timerTick = setInterval(() => this._tickTimers(), 1000);
+    const recipe = this._overlayRecipe();
+    const timer = {
+      id: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      label: label || fmtClock(seconds),
+      recipe: recipe ? recipe.title : "",
+      end: Date.now() + seconds * 1000,
+      ringing: false,
+    };
+    this._timers.push(timer);
+    this._ensureTick();
     this._renderTimers();
+    this._saveCookSession();
+    // Home Assistant prévient aussi le téléphone à la fin, même verrouillé.
+    let phone = false;
+    try {
+      const res = await this._ws("timer/start", { timer_id: timer.id, seconds, label: timer.label, recipe: timer.recipe });
+      phone = res.notify.length > 0;
+    } catch (_) {
+      /* le minuteur local suffit */
+    }
+    this._toast(`⏲️ Minuteur lancé : ${timer.label}${phone ? " · 📱 vous serez prévenu sur le téléphone" : ""}`);
+  }
+
+  _ensureTick() {
+    if ((this._timers || []).length && !this._timerTick) this._timerTick = setInterval(() => this._tickTimers(), 1000);
   }
 
   _stopTimer(id) {
@@ -2313,7 +2351,9 @@ class FrigoMalinPanel extends HTMLElement {
       clearInterval(this._timerTick);
       this._timerTick = null;
     }
+    this._ws("timer/cancel", { timer_id: id }).catch(() => {});
     this._renderTimers();
+    this._saveCookSession();
   }
 
   _addToTimer(id, seconds) {
@@ -2321,7 +2361,58 @@ class FrigoMalinPanel extends HTMLElement {
     if (!t) return;
     t.end = Math.max(Date.now(), t.end) + seconds * 1000;
     t.ringing = false;
+    this._ws("timer/start", { timer_id: t.id, seconds: Math.round((t.end - Date.now()) / 1000), label: t.label, recipe: t.recipe }).catch(() => {});
     this._renderTimers();
+    this._saveCookSession();
+  }
+
+  /* ---------------- session de cuisine : survit à la mise en veille de l'iPhone */
+
+  _saveCookSession() {
+    const cook = this.s.stack.find((x) => x.type === "cook");
+    try {
+      if (!cook) {
+        localStorage.removeItem("frigo-malin-cook");
+        return;
+      }
+      const session = {
+        id: cook.id || null,
+        draft: cook.id ? null : cook.draft,
+        servings: cook.servings,
+        step: cook.step,
+        checked: cook.checked || [],
+        big: Boolean(cook.big),
+        timers: (this._timers || []).map(({ id, label, recipe, end }) => ({ id, label, recipe, end })),
+        saved: Date.now(),
+      };
+      localStorage.setItem("frigo-malin-cook", JSON.stringify(session));
+    } catch (_) {
+      /* stockage indisponible : tant pis */
+    }
+  }
+
+  /* Rouvre la recette en cours si l'app a été rechargée (veille, retour sur l'app, notification). */
+  _restoreCookSession() {
+    let session = null;
+    try {
+      session = JSON.parse(localStorage.getItem("frigo-malin-cook") || "null");
+    } catch (_) {
+      session = null;
+    }
+    if (!session || Date.now() - session.saved > 12 * 3600 * 1000) return false;
+    const recipe = session.id ? this._recipe(session.id) : session.draft;
+    if (!recipe) return false;
+    const base = session.id
+      ? { type: "recipe", id: session.id, servings: session.servings, confirmDelete: false }
+      : { type: "recipe", draft: session.draft, servings: session.servings };
+    this.s.stack = [
+      base,
+      { type: "cook", id: session.id, draft: session.draft, servings: session.servings, step: session.step, checked: session.checked, big: session.big, showIng: false },
+    ];
+    this._timers = (session.timers || []).map((t) => ({ ...t, ringing: false }));
+    this._ensureTick();
+    this._requestWakeLock();
+    return true;
   }
 
   _tickTimers() {
@@ -2359,6 +2450,14 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   /* ---------------- écran allumé en mode cuisine */
+
+  _onVisibility() {
+    if (document.visibilityState !== "visible") return;
+    if (this.s.stack.some((x) => x.type === "cook")) {
+      this._requestWakeLock();
+      this._tickTimers();
+    }
+  }
 
   async _requestWakeLock() {
     try {
@@ -2410,6 +2509,7 @@ class FrigoMalinPanel extends HTMLElement {
   _renderOverlay() {
     const host = this.shadowRoot.getElementById("overlay");
     if (!host) return;
+    if (this.top && this.top.type === "cook") this._saveCookSession();
     const top = this.top;
     const prevBody = host.querySelector(".body");
     const prevKey = host.dataset.key;
@@ -2449,7 +2549,7 @@ class FrigoMalinPanel extends HTMLElement {
     return `<div class="toolbar">
       ${this._narrow ? `<button class="icon-btn" data-action="menu" aria-label="Menu">${icon("menu")}</button>` : `<span style="width:12px"></span>`}
       ${LOGO_SVG}
-      <div class="title" style="margin-left:10px">Frigo Malin</div>
+      <div class="title app-title" style="margin-left:10px">Frigo Malin<small>par Adri</small></div>
       ${this.listEntity ? `<button class="icon-btn cart" data-action="quick-open" aria-label="Ajout rapide à la liste de courses" title="Ajout rapide">${icon("cart-plus")}</button>` : ""}
       ${this.s.config ? `<button class="icon-btn" data-action="settings-open" aria-label="Réglages du foyer" title="Réglages du foyer">${icon("cog-outline")}</button>` : ""}
     </div>`;
@@ -2472,7 +2572,7 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   _tplVersion() {
-    return `<div class="version">${icon("tag-outline")} Frigo Malin v${esc(FM_VERSION)}</div>`;
+    return `<div class="version">${icon("tag-outline")} Frigo Malin par Adri · v${esc(FM_VERSION)}</div>`;
   }
 
   /* Le serveur a été mis à jour mais le navigateur garde l'ancien panneau en cache. */
@@ -2691,12 +2791,13 @@ class FrigoMalinPanel extends HTMLElement {
       const groups = {};
       for (const item of pending) (groups[aisleOf(item.summary)] = groups[aisleOf(item.summary)] || []).push(item);
       const stores = this.settings.stores || [];
-      const store = stores.find((x) => x.id === l.storeId);
+      // Par défaut : le premier magasin créé. « Standard » seulement si on le choisit.
+      const store = l.storeId === "standard" ? null : stores.find((x) => x.id === l.storeId) || stores[0] || null;
       const byKey = Object.fromEntries(AISLES.map((a) => [a.key, a]));
       const order = store ? store.aisles.map((k) => byKey[k]).filter(Boolean) : AISLES;
       html += `<div class="store-pick">
         <span class="lbl">${icon("store-outline")} Rayons :</span>
-        <button class="chip ${store ? "" : "on"}" data-action="store-pick" data-id="">Standard</button>
+        <button class="chip ${store ? "" : "on"}" data-action="store-pick" data-id="standard">Standard</button>
         ${stores.map((x) => `<button class="chip ${store && store.id === x.id ? "on" : ""}" data-action="store-pick" data-id="${esc(x.id)}">🏪 ${esc(x.name)}</button>`).join("")}
         <button class="chip add" data-action="settings-open">${icon(stores.length ? "cog-outline" : "store-plus-outline")}${stores.length ? "" : " Mon magasin"}</button>
       </div>`;
@@ -2722,10 +2823,13 @@ class FrigoMalinPanel extends HTMLElement {
 
   _tplShopping() {
     return `
-      <div class="card quickbox">
-        <div class="row" style="margin-bottom:10px">${bubble("lightning-bolt", COLORS.amber)}<h3 style="margin:0">Ajout rapide</h3></div>
-        ${this._tplQuickInput("quick-input")}
-        <div class="chips quick-sugg">${this._tplQuickChips()}</div>
+      <div class="quickbar">
+        <div class="qb-field">
+          ${icon("cart-plus")}
+          <input class="quick-input" id="quick-input" placeholder="Ajouter un article…" value="${esc(this.s.list.quick)}" data-model="list.quick" data-enter="quick-add" enterkeyhint="send" autocomplete="off" aria-label="Ajouter un article">
+          <button class="qb-add" data-action="quick-add" aria-label="Ajouter">${icon("plus")}</button>
+        </div>
+        <div class="chips scroll quick-sugg">${this._tplQuickChips()}</div>
       </div>
       <div id="shop-list">${this._tplShopList()}</div>`;
   }

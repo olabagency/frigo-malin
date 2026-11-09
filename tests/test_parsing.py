@@ -135,3 +135,31 @@ def test_html_to_text_keeps_the_recipe_part():
 
 def test_centimetres_are_a_unit():
     assert parse_ingredient("3 cm de gingembre frais") == {"quantity": 3.0, "unit": "cm", "name": "gingembre frais"}
+
+
+@pytest.mark.parametrize(
+    ("ingredient", "expected"),
+    [
+        ({"quantity": 2, "unit": "", "name": "tours de moulin de poivre au goût"}, "Poivre"),
+        ({"quantity": 3, "unit": "", "name": "gouttes de tabasco"}, "Tabasco"),
+        ({"quantity": 1, "unit": "pincée", "name": "piment d'Espelette"}, "Piment d'Espelette"),
+        ({"quantity": 1, "unit": "", "name": "filet d'huile d'olive"}, "Huile d'olive"),
+        ({"quantity": 1, "unit": "", "name": "trait de sauce soja"}, "Sauce soja"),
+        ({"quantity": None, "unit": "", "name": "persil (facultatif)"}, "Persil"),
+        ({"quantity": None, "unit": "", "name": "huile pour la cuisson"}, "Huile"),
+        ({"quantity": 2, "unit": "filet", "name": "maquereau"}, "Maquereau (2 filets)"),
+        ({"quantity": 200, "unit": "g", "name": "farine"}, "Farine (200 g)"),
+    ],
+)
+def test_shopping_item_is_buyable(ingredient, expected):
+    from custom_components.frigo_malin.parsing import shopping_item
+
+    assert format_ingredient(shopping_item(ingredient)) == expected
+
+
+def test_pepper_mill_is_excluded_like_pepper():
+    items = aggregate_shopping(
+        [([{"quantity": 2, "unit": "", "name": "tours de moulin de poivre au goût"}, parse_ingredient("200 g de bœuf")], 1, "Tartare")],
+        parse_excluded("sel, poivre, eau"),
+    )
+    assert [i["text"] for i in items] == ["Bœuf (200 g)"]

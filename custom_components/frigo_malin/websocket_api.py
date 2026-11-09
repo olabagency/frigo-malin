@@ -33,11 +33,12 @@ from .const import (
     VERSION,
 )
 from .drive import CONNECTORS
+from .timers import async_cancel_timer, async_start_timer
 from .todo import OWN_LIST_ENTITY
 from .importer import RecipeImportError, async_import_recipe
 from .household import household_context, household_servings
 from .library import THEMES, TYPES, load_library
-from .parsing import aggregate_shopping, merge_into_list, parse_excluded, parse_list_text, shopping_key
+from .parsing import aggregate_shopping, merge_into_list, parse_excluded, parse_list_text, shopping_item, shopping_key
 
 if TYPE_CHECKING:
     from . import FrigoData
@@ -198,6 +199,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_plan_apply,
         ws_library_list,
         ws_library_ideas,
+        ws_timer_start,
+        ws_timer_cancel,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -486,9 +489,8 @@ async def ws_shopping_add(hass: HomeAssistant, connection: websocket_api.ActiveC
     """Ajoute des articles écrits librement (« 2 kg de pommes », « lait ») ou issus du menu."""
     data = _data(hass)
     texts = [t.strip() for t in msg["items"] if t.strip()]
-    parsed = [parse_list_text(t) for t in texts]
-    for item in parsed:
-        item["name"] = item["name"][:1].upper() + item["name"][1:]
+    parsed = [shopping_item(parse_list_text(t)) for t in texts]
+    parsed = [item for item in parsed if item["name"]]
     try:
         summary = await _add_to_list(hass, data, parsed)
     except HomeAssistantError as err:
@@ -726,3 +728,33 @@ async def ws_library_ideas(hass: HomeAssistant, connection: websocket_api.Active
         recipe["tags"] = [THEMES[msg["theme"]]] if msg["theme"] else []
         recipe["origin"] = "ai"
     connection.send_result(msg["id"], {"recipes": recipes})
+
+
+# ---------------------------------------------------------------- minuteurs du mode cuisine
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "frigo_malin/timer/start",
+        vol.Required("timer_id"): vol.All(str, vol.Length(min=1, max=64)),
+        vol.Required("seconds"): vol.All(int, vol.Range(min=1, max=12 * 3600)),
+        vol.Optional("label", default=""): vol.All(str, vol.Length(max=120)),
+        vol.Optional("recipe", default=""): vol.All(str, vol.Length(max=200)),
+    }
+)
+@callback
+def ws_timer_start(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Programme une notification sur le téléphone à la fin d'un minuteur."""
+    services = async_start_timer(
+        hass, connection.user.id, msg["timer_id"], msg["seconds"], msg["label"], msg["recipe"]
+    )
+    connection.send_result(msg["id"], {"notify": services})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "frigo_malin/timer/cancel", vol.Required("timer_id"): str}
+)
+@callback
+def ws_timer_cancel(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    async_cancel_timer(hass, connection.user.id, msg["timer_id"])
+    connection.send_result(msg["id"], {})

@@ -7,6 +7,24 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.7.0] – 2026-11-09
+
+### Ajouté
+
+- **Minuteurs prévenus sur le téléphone** : quand un minuteur du mode cuisine se termine, Home Assistant envoie une notification « ⏰ C'est prêt ! » au téléphone de la personne qui l'a lancé, même écran verrouillé ou app fermée. Un appui rouvre la recette à la bonne étape.
+- **Recette en cours conservée** : si l'iPhone se met en veille ou recharge l'app, le mode cuisine revient tel quel (étape, ingrédients cochés, minuteurs en cours) et l'écran est de nouveau maintenu allumé.
+
+### Modifié
+
+- L'app s'appelle maintenant **Frigo Malin par Adri** (barre latérale, en-tête, intégration, HACS, carte du tableau de bord).
+- Onglet Courses : l'ajout rapide tient sur une ligne, avec une seule rangée de suggestions qui défile, et reste en haut pendant qu'on fait défiler la liste.
+- Onglet Courses : les rayons suivent par défaut l'ordre du **premier magasin** créé (« Standard » reste disponible).
+
+### Corrigé
+
+- La liste de courses ne reçoit plus d'articles impossibles à acheter : « 2 tours de moulin de poivre au goût » devient « Poivre » (que les réglages excluent par défaut, comme le sel), « 3 gouttes de tabasco » devient « Tabasco », etc.
+- Emoji erronés dans la liste : la quantité entre parenthèses n'est plus prise pour un aliment (« Moutarde (1 c. à café) » n'est plus du café ☕), et des câpres hachées ne sont plus de la viande.
+
 ## [1.6.0] – 2026-11-09
 
 ### Ajouté

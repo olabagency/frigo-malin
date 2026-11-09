@@ -1,6 +1,6 @@
 {
   "domain": "frigo_malin",
-  "name": "Frigo Malin",
+  "name": "Frigo Malin par Adri",
   "after_dependencies": [
     "todo"
   ],
@@ -20,5 +20,5 @@
   "issue_tracker": "https://github.com/olabagency/frigo-malin/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "1.6.0"
+  "version": "1.7.0"
 }

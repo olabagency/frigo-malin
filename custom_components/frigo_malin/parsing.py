@@ -293,6 +293,47 @@ def _display_unit(quantity: float, unit: str) -> tuple[float, str]:
     return quantity, unit
 
 
+# Mesures qu'on n'achète pas : on garde l'ingrédient, sans quantité.
+_UNBUYABLE_MEASURE = re.compile(
+    r"^(?:(?:quelques|un peu de|une? (?:bonne |petite )?)\s*)?"
+    r"(?:tours?\s+de\s+moulin|gouttes?|traits?|pincées?|soupçons?|nuages?|zestes?|brins?|feuilles?|"
+    r"filets?(?=\s+(?:d'|de\s+)(?:huile|vinaigre|citron|jus|sauce|crème|miel|sirop))|poignées?)"
+    r"(?:\s+(?:à|de|d'|du|des)\s*)?",
+    re.I,
+)
+_TRAILING_NOISE = re.compile(
+    r"\s*(?:[,(]\s*)?(?:au goût|selon (?:votre |le )?goût|à votre goût|à convenance|facultatif|optionnel|"
+    r"pour (?:la cuisson|servir|le service|la décoration|décorer|la poêle|le plat|le moule|la friture)|"
+    r"(?:frais )?moulu|fraîchement moulu|du moulin)\s*\)?\s*$",
+    re.I,
+)
+_UNBUYABLE_UNITS = {"pincée", "trait", "zeste", "brin", "feuille", "poignée"}
+
+
+def shopping_item(ing: dict[str, Any]) -> dict[str, Any]:
+    """Transforme un ingrédient de recette en article qu'on peut acheter.
+
+    « 2 tours de moulin de poivre au goût » -> « Poivre » ; « 3 gouttes de tabasco » -> « Tabasco » ;
+    « 1 pincée de sel » -> « Sel » ; « 200 g de farine » reste « Farine (200 g) ».
+    """
+    name = " ".join(str(ing.get("name") or "").split())
+    quantity, unit = ing.get("quantity"), ing.get("unit") or ""
+    measured = False
+    for _ in range(3):
+        cleaned = _TRAILING_NOISE.sub("", name)
+        match = _UNBUYABLE_MEASURE.match(cleaned)
+        if match and match.end() < len(cleaned):
+            cleaned = cleaned[match.end() :]
+            measured = True
+        cleaned = _strip_of(cleaned).strip(" ,;:-")
+        if cleaned == name:
+            break
+        name = cleaned
+    if measured or unit in _UNBUYABLE_UNITS:
+        quantity, unit = None, ""
+    return {**ing, "name": name[:1].upper() + name[1:] if name else name, "quantity": quantity, "unit": unit}
+
+
 def aggregate_shopping(
     recipes: list[tuple[list[dict[str, Any]], float, str]],
     excluded: list[str] | None = None,
@@ -305,6 +346,7 @@ def aggregate_shopping(
     groups: dict[tuple[str, str], dict[str, Any]] = {}
     for ingredients, factor, title in recipes:
         for ing in ingredients:
+            ing = shopping_item(ing)
             name = str(ing.get("name") or "").strip()
             if not name or _is_excluded(name, excluded):
                 continue

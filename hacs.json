@@ -1,6 +1,11 @@
 {
-  "name": "Frigo Malin",
+  "name": "Frigo Malin par Adri",
   "homeassistant": "2025.1.0",
   "render_readme": true,
-  "country": ["FR", "BE", "CH", "CA"]
+  "country": [
+    "FR",
+    "BE",
+    "CH",
+    "CA"
+  ]
 }

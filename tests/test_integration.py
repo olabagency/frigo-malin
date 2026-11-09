@@ -513,3 +513,47 @@ async def test_builtin_list_and_default_servings(hass: HomeAssistant, hass_ws_cl
     hass.states.async_set("todo.courses_famille", "0", {"friendly_name": "Courses famille"})
     saved = await ws("settings/save", settings={"servings": 2, "shopping_entity": "todo.courses_famille"})
     assert saved["result"]["shopping_list"]["entity_id"] == "todo.courses_famille"
+
+
+async def test_cook_timer_notifies_phone(hass: HomeAssistant, hass_ws_client, hass_admin_user) -> None:
+    """Un minuteur du mode cuisine prévient le téléphone de la personne, même app fermée."""
+    from datetime import timedelta
+
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed, async_mock_service
+
+    await _setup(hass)
+    phone_entry = MockConfigEntry(domain="mobile_app")
+    phone_entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=phone_entry.entry_id, identifiers={("mobile_app", "iphone")}, name="iPhone d'Adri"
+    )
+    er.async_get(hass).async_get_or_create(
+        "device_tracker", "mobile_app", "iphone", device_id=device.id, suggested_object_id="iphone"
+    )
+    calls = async_mock_service(hass, "notify", "mobile_app_iphone_d_adri")
+    client = await hass_ws_client(hass)
+    hass.states.async_set(
+        "person.adri", "home", {"user_id": hass_admin_user.id, "device_trackers": ["device_tracker.iphone"]}
+    )
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    started = await ws("timer/start", timer_id="t1", seconds=60, label="Étape 2 · 1 min", recipe="Gratin")
+    assert started["success"], started
+    assert started["result"]["notify"] == ["mobile_app_iphone_d_adri"]
+
+    # Un minuteur annulé ne sonne pas.
+    await ws("timer/start", timer_id="t2", seconds=30, label="Annulé")
+    await ws("timer/cancel", timer_id="t2")
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=61))
+    await hass.async_block_till_done()
+    assert len(calls) == 1
+    assert calls[0].data["title"] == "⏰ C'est prêt !"
+    assert calls[0].data["message"] == "Gratin · Étape 2 · 1 min"
+    assert calls[0].data["data"]["url"] == "/frigo-malin?resume=cook"
+    assert calls[0].data["data"]["push"]["interruption-level"] == "time-sensitive"

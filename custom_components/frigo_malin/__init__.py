@@ -55,6 +55,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: FrigoConfigEntry) -> boo
     store = FrigoStore(hass)
     await store.async_load()
 
+    # Nouveau nom de l'app : on renomme aussi l'intégration déjà installée.
+    if entry.title == "Frigo Malin":
+        hass.config_entries.async_update_entry(entry, title=PANEL_TITLE)
+
     options = {**entry.data, **entry.options}
     ai = AIClient(
         async_get_clientsession(hass),
@@ -112,7 +116,7 @@ def _announce_update(hass: HomeAssistant, store: FrigoStore) -> None:
             f"Frigo Malin est passé de la version {previous} à la version **{VERSION}**.\n\n"
             f"[Voir les nouveautés]({CHANGELOG_URL})\n\n"
             "Si l'écran de Frigo Malin semble inchangé sur votre téléphone, fermez puis rouvrez l'app.",
-            title="Frigo Malin mis à jour",
+            title="Frigo Malin par Adri mis à jour",
             notification_id=UPDATE_NOTIFICATION_ID,
         )
     store.set_last_version(VERSION)

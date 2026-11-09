@@ -1,6 +1,6 @@
 <p align="center"><img src="custom_components/frigo_malin/brand/icon.png" width="120" alt="Frigo Malin"></p>
 
-# Frigo Malin 🥕
+# Frigo Malin par Adri 🥕
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
 [![Validation](https://github.com/olabagency/frigo-malin/actions/workflows/validate.yml/badge.svg)](https://github.com/olabagency/frigo-malin/actions/workflows/validate.yml)

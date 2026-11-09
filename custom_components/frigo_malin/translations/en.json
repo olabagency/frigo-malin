@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Frigo Malin",
+        "title": "Frigo Malin par Adri",
         "description": "Choose the AI that will recognise your food and suggest recipes. You will need your own API key.",
         "data": {
           "provider": "AI provider"

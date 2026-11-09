@@ -88,7 +88,7 @@ class FrigoMalinConfigFlow(ConfigFlow, domain=DOMAIN):
             errors = await _validate(self.hass, self._provider, user_input[CONF_API_KEY], model)
             if not errors:
                 return self.async_create_entry(
-                    title="Frigo Malin",
+                    title="Frigo Malin par Adri",
                     data={
                         CONF_PROVIDER: self._provider,
                         CONF_API_KEY: user_input[CONF_API_KEY],

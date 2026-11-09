@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Frigo Malin",
+        "title": "Frigo Malin par Adri",
         "description": "Choisissez l'IA qui reconnaîtra vos aliments et proposera des recettes. Il vous faudra votre propre clé API.",
         "data": {
           "provider": "Fournisseur d'IA"
