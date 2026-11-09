@@ -1,0 +1,59 @@
+name: Release automatique
+
+# À chaque nouvelle version poussée sur main (manifest.json), publie la release
+# GitHub « vX.Y.Z » avec les notes du CHANGELOG. HACS affiche alors la version
+# dans Paramètres → Mises à jour de Home Assistant.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - custom_components/frigo_malin/manifest.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Lire la version
+        id: version
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('custom_components/frigo_malin/manifest.json'))['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Vérifier que la version est cohérente partout
+        if: steps.version.outputs.exists == 'false'
+        run: python3 scripts/check_version.py "${{ steps.version.outputs.version }}"
+
+      - name: Extraire les notes du CHANGELOG
+        if: steps.version.outputs.exists == 'false'
+        run: |
+          python3 - "${{ steps.version.outputs.version }}" <<'PY'
+          import re, sys
+          version = sys.argv[1]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          match = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)", text, re.S | re.M)
+          notes = match.group(1).strip() if match else "Voir CHANGELOG.md."
+          open("release-notes.md", "w", encoding="utf-8").write(notes + "\n")
+          PY
+
+      - name: Publier la release
+        if: steps.version.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body_path: release-notes.md
+          target_commitish: ${{ github.sha }}

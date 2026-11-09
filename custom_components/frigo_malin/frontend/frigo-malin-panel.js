@@ -659,6 +659,8 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .dialog h3 { margin: 0 0 8px; }
 .dialog p { margin: 0 0 18px; color: var(--fm-text2); }
 .dialog .row { justify-content: flex-end; }
+.dialog-list { list-style: none; margin: -8px 0 16px; padding: 10px 12px; border-radius: 12px; background: var(--fm-bg); max-height: 30vh; overflow-y: auto; font-size: 14px; }
+.dialog-list li { padding: 3px 0; }
 .btn.danger-fill { background: var(--fm-error); color: #fff; }
 .thumb {
   width: 64px; height: 64px; border-radius: 10px; flex-shrink: 0; object-fit: cover;
@@ -1171,7 +1173,7 @@ class FrigoMalinPanel extends HTMLElement {
       ev.preventDefault();
       this._dispatch(ev.target.dataset.enter, ev.target, ev);
     }
-    if (ev.key === "Escape" && this._confirmResolve) return this._closeDialog(false);
+    if (ev.key === "Escape" && this._confirmResolve) return this._closeDialog(null);
     if (ev.key === "Escape" && this.s.list.editing) {
       this.s.list.editing = null;
       this._renderListParts();
@@ -1249,24 +1251,32 @@ class FrigoMalinPanel extends HTMLElement {
 
   /* Fenêtre de confirmation : renvoie une promesse résolue à true / false. */
   _confirm({ title, message, confirm = "Confirmer", danger = true }) {
+    return this._ask({ title, message, buttons: [{ label: confirm, value: true, style: danger ? "danger-fill" : "" }] }).then((v) => v === true);
+  }
+
+  /* Question avec plusieurs réponses ; « Annuler » (ou toucher à côté) renvoie null. */
+  _ask({ title, message, buttons, details = [] }) {
     return new Promise((resolve) => {
       this._confirmResolve = resolve;
+      this._askButtons = buttons;
       const host = this.shadowRoot.getElementById("dialog");
       host.innerHTML = `<div class="dialog-backdrop" data-action="dialog-no">
         <div class="dialog" role="alertdialog" aria-modal="true" data-action="dialog-noop">
           <h3>${esc(title)}</h3>
           <p>${esc(message)}</p>
-          <div class="row">
+          ${details.length ? `<ul class="dialog-list">${details.map((d) => `<li>${ingEmoji(d)} ${esc(d)}</li>`).join("")}</ul>` : ""}
+          <div class="row wrap">
             <button class="btn text" data-action="dialog-no">Annuler</button>
-            <button class="btn ${danger ? "danger-fill" : ""}" data-action="dialog-yes">${esc(confirm)}</button>
+            ${buttons.map((b, i) => `<button class="btn ${b.style || ""}" data-action="dialog-pick" data-i="${i}">${esc(b.label)}</button>`).join("")}
           </div>
         </div>
       </div>`;
-      host.querySelector('[data-action="dialog-yes"]').focus();
+      const last = host.querySelectorAll('[data-action="dialog-pick"]');
+      if (last.length) last[last.length - 1].focus();
     });
   }
 
-  _closeDialog(answer) {
+  _closeDialog(answer = null) {
     const host = this.shadowRoot.getElementById("dialog");
     if (host) host.innerHTML = "";
     if (this._confirmResolve) {
@@ -1584,12 +1594,11 @@ class FrigoMalinPanel extends HTMLElement {
         return;
 
       /* Carnet */
-      case "dialog-yes":
-        this._closeDialog(true);
+      case "dialog-pick":
+        this._closeDialog(this._askButtons[Number(d.i)].value);
         return;
       case "dialog-no":
-        if (ev && ev.target && ev.target.closest && ev.target.closest(".dialog") && ev.target.dataset.action !== "dialog-no") return;
-        this._closeDialog(false);
+        this._closeDialog(null);
         return;
       case "dialog-noop":
         return;
@@ -2220,10 +2229,31 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   async _removeMeal(id) {
+    const entry = this.s.week.entries.find((e) => e.id === id);
+    const recipe = entry && this._recipe(entry.recipe_id);
+    let removeShopping = false;
     try {
-      await this._ws("plan/delete", { entry_id: id });
+      if (entry && entry.in_shopping_list) {
+        const impact = await this._ws("plan/shopping_impact", { entry_id: id });
+        if (impact.count) {
+          const answer = await this._ask({
+            title: "Retirer le repas ?",
+            message: `${recipe ? `« ${recipe.title} » est retiré du menu. ` : ""}Retirer aussi ${impact.count > 1 ? `ses ${impact.count} ingrédients` : "son ingrédient"} de la liste de courses ?`,
+            details: impact.items,
+            buttons: [
+              { label: "Garder les courses", value: "keep", style: "tonal" },
+              { label: "Retirer aussi", value: "remove", style: "danger-fill" },
+            ],
+          });
+          if (!answer) return;
+          removeShopping = answer === "remove";
+        }
+      }
+      const res = await this._ws("plan/delete", { entry_id: id, remove_shopping: removeShopping });
       this.s.week.entries = this.s.week.entries.filter((e) => e.id !== id);
       this._render();
+      const n = res.removed.length + res.updated.length;
+      this._toast(n ? `Repas retiré · ${n} article${n > 1 ? "s" : ""} retiré${n > 1 ? "s" : ""} de la liste` : "Repas retiré du menu");
     } catch (err) {
       this._toast(this._err(err), true);
     }
@@ -3130,15 +3160,15 @@ class FrigoMalinPanel extends HTMLElement {
   /* ---------------- onglet Recettes */
 
   _filteredRecipes() {
-    const q = String(this.s.search || "").trim().toLowerCase();
+    const q = foldText(this.s.search).trim();
     return this.s.recipes.filter((r) => {
       if (this.s.filter === "fav" && !r.favorite) return false;
       if (this.s.filter.startsWith("tag:") && !(r.tags || []).includes(this.s.filter.slice(4))) return false;
       if (!q) return true;
       return (
-        r.title.toLowerCase().includes(q) ||
-        (r.tags || []).some((t) => t.toLowerCase().includes(q)) ||
-        r.ingredients.some((i) => i.name.toLowerCase().includes(q))
+        foldText(r.title).includes(q) ||
+        (r.tags || []).some((t) => foldText(t).includes(q)) ||
+        r.ingredients.some((i) => foldText(i.name).includes(q))
       );
     });
   }
@@ -3680,9 +3710,9 @@ class FrigoMalinPanel extends HTMLElement {
     if (!this.s.recipes.length) {
       return `<div class="empty"><div class="emoji">📖</div><p>Le carnet est vide. Ajoutez d'abord des recettes depuis l'onglet Recettes ou Frigo.</p></div>`;
     }
-    const q = String(top.query || "").trim().toLowerCase();
+    const q = foldText(top.query).trim();
     const list = this.s.recipes
-      .filter((r) => !q || r.title.toLowerCase().includes(q) || (r.tags || []).some((t) => t.toLowerCase().includes(q)))
+      .filter((r) => !q || foldText(r.title).includes(q) || (r.tags || []).some((t) => foldText(t).includes(q)))
       .sort((a, b) => Number(b.favorite) - Number(a.favorite));
     if (!list.length) return `<div class="empty"><p>Aucune recette ne correspond.</p></div>`;
     return list

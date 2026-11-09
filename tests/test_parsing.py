@@ -179,3 +179,27 @@ def test_salt_and_pepper_are_never_on_the_list(name):
 def test_similar_words_are_kept(name):
     items = aggregate_shopping([([{"quantity": 1, "unit": "", "name": name}], 1, "R")], excluded=[])
     assert len(items) == 1
+
+
+def test_subtract_from_list():
+    from custom_components.frigo_malin.parsing import subtract_from_list
+
+    existing = [
+        {"uid": "a", "summary": "Tomates (800 g)"},
+        {"uid": "b", "summary": "Crème (25 cl)"},
+        {"uid": "c", "summary": "Persil"},
+        {"uid": "d", "summary": "Pain"},
+    ]
+    ops = subtract_from_list(
+        existing,
+        [
+            {"name": "tomates", "quantity": 500, "unit": "g"},
+            {"name": "crème", "quantity": 25, "unit": "cl"},
+            {"name": "persil", "quantity": None, "unit": ""},
+        ],
+    )
+    assert ops == [
+        {"op": "update", "uid": "a", "text": "Tomates (300 g)", "previous": "Tomates (800 g)"},
+        {"op": "remove", "uid": "b", "text": "Crème (25 cl)"},
+        {"op": "remove", "uid": "c", "text": "Persil"},
+    ]

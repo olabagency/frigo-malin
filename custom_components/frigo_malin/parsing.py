@@ -464,6 +464,55 @@ def merge_into_list(
     return operations
 
 
+def subtract_from_list(
+    existing: list[dict[str, Any]], items: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Retire d'une liste les quantités apportées par un repas.
+
+    `existing` : articles non cochés {"uid", "summary"} ; `items` : ingrédients {"name", "quantity", "unit"}.
+    Renvoie {"op": "remove", "uid", "text"} ou {"op": "update", "uid", "text", "previous"}.
+    Un article plus abondant que ce que le repas a apporté garde le reste (800 g - 500 g -> 300 g).
+    """
+    current = [
+        {"uid": e.get("uid"), "summary": e.get("summary"), **parse_list_text(e.get("summary") or ""), "op": None}
+        for e in existing
+    ]
+
+    def base(ing: dict[str, Any]) -> tuple[float | None, str]:
+        unit = ing.get("unit") or ""
+        base_unit, mult = _TO_BASE.get(unit, (unit, 1))
+        qty = ing.get("quantity")
+        return (float(qty) * mult if qty is not None else None), base_unit
+
+    for ing in items:
+        key = shopping_key(str(ing.get("name") or ""))
+        qty, unit = base(ing)
+        for cand in current:
+            if cand["op"] == "remove" or shopping_key(cand["name"]) != key:
+                continue
+            cand_qty, cand_unit = base(cand)
+            if qty is None and cand_qty is None:
+                cand["op"] = "remove"
+                break
+            if qty is None or cand_qty is None or cand_unit != unit:
+                continue
+            remaining = cand_qty - qty
+            if remaining <= 1e-6:
+                cand["op"] = "remove"
+            else:
+                cand["quantity"], cand["unit"] = _display_unit(remaining, unit)
+                cand["op"] = "update"
+            break
+
+    ops = []
+    for cand in current:
+        if cand["op"] == "remove":
+            ops.append({"op": "remove", "uid": cand["uid"], "text": cand["summary"]})
+        elif cand["op"] == "update":
+            ops.append({"op": "update", "uid": cand["uid"], "text": format_ingredient(cand), "previous": cand["summary"]})
+    return ops
+
+
 # --------------------------------------------------------------------------
 # Import depuis une page web (schema.org/Recipe)
 # --------------------------------------------------------------------------

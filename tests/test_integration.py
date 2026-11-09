@@ -557,3 +557,28 @@ async def test_cook_timer_notifies_phone(hass: HomeAssistant, hass_ws_client, ha
     assert calls[0].data["message"] == "Gratin · Étape 2 · 1 min"
     assert calls[0].data["data"]["url"] == "/frigo-malin?resume=cook"
     assert calls[0].data["data"]["push"]["interruption-level"] == "time-sensitive"
+
+
+async def test_remove_meal_and_its_shopping(hass: HomeAssistant, hass_ws_client) -> None:
+    await _setup(hass)
+    await _clear_list(hass)
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    gratin = (await ws("recipes/save", recipe={"title": "Gratin", "servings": 4, "ingredients": ["1 kg de pommes de terre", "50 cl de crème"], "steps": ["Cuire"]}))["result"]["recipe"]
+    soupe = (await ws("recipes/save", recipe={"title": "Soupe", "servings": 4, "ingredients": ["500 g de pommes de terre", "2 poireaux"], "steps": ["Cuire"]}))["result"]["recipe"]
+    first = (await ws("plan/add", date="2026-11-12", slot="dinner", recipe_id=gratin["id"], servings=4))["result"]["entry"]
+    await ws("plan/add", date="2026-11-13", slot="dinner", recipe_id=soupe["id"], servings=4)
+    assert sorted(await _todo_items(hass)) == ["Crème (50 cl)", "Poireaux (2)", "Pommes de terre (1,5 kg)"]
+
+    impact = await ws("plan/shopping_impact", entry_id=first["id"])
+    assert impact["result"]["count"] == 2
+
+    deleted = await ws("plan/delete", entry_id=first["id"], remove_shopping=True)
+    assert deleted["success"], deleted
+    assert deleted["result"]["removed"] == ["Crème (50 cl)"]
+    assert deleted["result"]["updated"] == ["Pommes de terre (500 g)"]
+    assert sorted(await _todo_items(hass)) == ["Poireaux (2)", "Pommes de terre (500 g)"]

@@ -38,7 +38,15 @@ from .todo import OWN_LIST_ENTITY
 from .importer import RecipeImportError, async_import_recipe
 from .household import household_context, household_servings
 from .library import THEMES, TYPES, load_library
-from .parsing import aggregate_shopping, merge_into_list, parse_excluded, parse_list_text, shopping_item, shopping_key
+from .parsing import (
+    aggregate_shopping,
+    merge_into_list,
+    parse_excluded,
+    parse_list_text,
+    shopping_item,
+    shopping_key,
+    subtract_from_list,
+)
 
 if TYPE_CHECKING:
     from . import FrigoData
@@ -190,6 +198,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_plan_add,
         ws_plan_update,
         ws_plan_delete,
+        ws_plan_shopping_impact,
         ws_shopping_preview,
         ws_shopping_add,
         ws_shopping_suggestions,
@@ -436,13 +445,67 @@ def ws_plan_update(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     connection.send_result(msg["id"], {"entry": entry})
 
 
+async def _list_items(hass: HomeAssistant, entity_id: str) -> list[dict[str, Any]]:
+    try:
+        response = await hass.services.async_call(
+            "todo", "get_items", {"status": ["needs_action"]}, target={"entity_id": entity_id},
+            blocking=True, return_response=True,
+        )
+    except HomeAssistantError:
+        return []
+    return (response or {}).get(entity_id, {}).get("items", [])
+
+
+async def _meal_shopping_ops(hass: HomeAssistant, data: FrigoData, entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Ce qu'il faudrait retirer de la liste si on supprime ce repas."""
+    entity_id = _shopping_entity(hass, data)
+    if not entry.get("in_shopping_list") or entity_id is None:
+        return []
+    return subtract_from_list(await _list_items(hass, entity_id), _plan_items(data, [entry]))
+
+
 @websocket_api.websocket_command(
-    {vol.Required("type"): "frigo_malin/plan/delete", vol.Required("entry_id"): str}
+    {vol.Required("type"): "frigo_malin/plan/shopping_impact", vol.Required("entry_id"): str}
 )
-@callback
-def ws_plan_delete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    _data(hass).store.delete_plan(msg["entry_id"])
-    connection.send_result(msg["id"], {})
+@websocket_api.async_response
+async def ws_plan_shopping_impact(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Articles de la liste qui viennent de ce repas (pour proposer de les retirer)."""
+    data = _data(hass)
+    entry = data.store.plan.get(msg["entry_id"])
+    ops = await _meal_shopping_ops(hass, data, entry) if entry else []
+    connection.send_result(msg["id"], {"items": [op["text"] for op in ops], "count": len(ops)})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "frigo_malin/plan/delete",
+        vol.Required("entry_id"): str,
+        vol.Optional("remove_shopping", default=False): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_plan_delete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    data = _data(hass)
+    entry = data.store.plan.get(msg["entry_id"])
+    removed, updated = [], []
+    if entry and msg["remove_shopping"]:
+        entity_id = _shopping_entity(hass, data)
+        for op in await _meal_shopping_ops(hass, data, entry):
+            if op["op"] == "remove":
+                await hass.services.async_call(
+                    "todo", "remove_item", {"item": [op["uid"]]}, target={"entity_id": entity_id}, blocking=True
+                )
+                removed.append(op["text"])
+            else:
+                await hass.services.async_call(
+                    "todo", "update_item", {"item": op["uid"], "rename": op["text"]},
+                    target={"entity_id": entity_id}, blocking=True,
+                )
+                updated.append(op["text"])
+    data.store.delete_plan(msg["entry_id"])
+    connection.send_result(msg["id"], {"removed": removed, "updated": updated})
 
 
 # ---------------------------------------------------------------------- courses
