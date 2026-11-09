@@ -47,9 +47,13 @@ DETECT_PROMPT = """Voici une photo de l'intérieur d'un frigo (ou d'un placard).
 Liste les aliments que tu reconnais avec certitude ou forte probabilité.
 Ignore les emballages illisibles. Utilise des noms simples et courants (« tomates », « yaourts nature », « beurre »).
 
+Pour chaque aliment, estime aussi combien de jours il se garde encore à partir d'aujourd'hui, d'après ce que tu vois
+(salade fraîche 3, salade un peu fanée 1, yaourts fermés 10, crème entamée 4, fromage à pâte dure 14, viande crue 2…).
+
 Réponds avec ce JSON :
-{"ingredients": [{"name": "tomates", "amount": "environ 4"}]}
-Le champ "amount" est une estimation courte, ou une chaîne vide si tu ne sais pas."""
+{"ingredients": [{"name": "tomates", "amount": "environ 4", "keeps_days": 5}]}
+Le champ "amount" est une estimation courte, ou une chaîne vide si tu ne sais pas.
+"keeps_days" est un nombre entier de jours, ou null pour les produits qui se gardent des mois (conserves, pâtes…)."""
 
 RECIPE_SCHEMA = """{"recipes": [{
   "title": "Nom de la recette",
@@ -271,7 +275,9 @@ class AIClient:
             name = str(item.get("name") or "").strip()
             if name and name.lower() not in seen:
                 seen.add(name.lower())
-                result.append({"name": name, "amount": str(item.get("amount") or "").strip()})
+                result.append(
+                    {"name": name, "amount": str(item.get("amount") or "").strip(), "keeps_days": _int_or_none(item.get("keeps_days"))}
+                )
         return result
 
     async def suggest_recipes(
@@ -282,6 +288,7 @@ class AIClient:
         servings: int = 4,
         notes: str = "",
         household: str = "",
+        priority: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         count = max(1, min(int(count), 6))
         prompt = (
@@ -291,6 +298,11 @@ class AIClient:
             f"Propose {count} recettes pour {servings} personnes qui utilisent au maximum ces ingrédients "
             "et demandent le moins d'achats possible. Étapes claires et numérotables, une action par étape.\n"
         )
+        if priority:
+            prompt += (
+                "À utiliser EN PRIORITÉ, car ils vont bientôt se perdre : " + ", ".join(priority) + ". "
+                "Chaque recette doit en utiliser au moins un.\n"
+            )
         if household:
             prompt += f"\nProfil du foyer :\n{household}\n"
         if notes.strip():

@@ -216,6 +216,10 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_library_ideas,
         ws_timer_start,
         ws_timer_cancel,
+        ws_fridge_memory,
+        ws_fridge_memory_save,
+        ws_fridge_memory_clear,
+        ws_fridge_memory_consume,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -354,6 +358,8 @@ async def ws_fridge_detect(
         vol.Optional("count", default=3): vol.All(int, vol.Range(min=1, max=6)),
         vol.Optional("servings"): vol.All(int, vol.Range(min=1, max=30)),
         vol.Optional("notes", default=""): str,
+        # Aliments à utiliser en priorité (ils vont bientôt se perdre).
+        vol.Optional("priority", default=[]): [str],
     }
 )
 @websocket_api.async_response
@@ -373,11 +379,58 @@ async def ws_fridge_suggest(
             servings=msg.get("servings") or _servings_default(data),
             notes=msg["notes"],
             household=household_context(data.store.settings),
+            priority=[p for p in msg["priority"] if p.strip()][:15],
         )
     except AIError as err:
         _error(connection, msg["id"], err)
         return
     connection.send_result(msg["id"], {"recipes": recipes})
+
+
+# ---------------------------------------------------------------- frigo mémorisé
+
+
+def _fridge_result(data: FrigoData) -> dict[str, Any]:
+    return {"items": data.store.fridge_items(), "updated": data.store.fridge.get("updated"), "days": data.store.settings.get("fridge_days", 5)}
+
+
+@websocket_api.websocket_command({vol.Required("type"): "frigo_malin/fridge/memory"})
+@callback
+def ws_fridge_memory(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    connection.send_result(msg["id"], _fridge_result(_data(hass)))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "frigo_malin/fridge/memory/save",
+        vol.Required("items"): [dict],
+        vol.Optional("mode", default="replace"): vol.In(["replace", "merge"]),
+    }
+)
+@callback
+def ws_fridge_memory_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    data = _data(hass)
+    data.store.save_fridge(msg["items"], msg["mode"])
+    connection.send_result(msg["id"], _fridge_result(data))
+
+
+@websocket_api.websocket_command({vol.Required("type"): "frigo_malin/fridge/memory/clear"})
+@callback
+def ws_fridge_memory_clear(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    data = _data(hass)
+    data.store.clear_fridge()
+    connection.send_result(msg["id"], _fridge_result(data))
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "frigo_malin/fridge/memory/consume", vol.Required("names"): [str]}
+)
+@callback
+def ws_fridge_memory_consume(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Après avoir cuisiné : les ingrédients de la recette sortent du frigo mémorisé."""
+    data = _data(hass)
+    removed = data.store.consume_fridge(msg["names"])
+    connection.send_result(msg["id"], {"removed": removed, **_fridge_result(data)})
 
 
 # ---------------------------------------------------------------------- menu

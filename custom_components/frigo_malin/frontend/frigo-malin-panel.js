@@ -302,6 +302,21 @@ function stepIngredients(text, ingredients) {
   });
 }
 
+/* Frigo mémorisé : jours restants avant qu'un aliment se perde. */
+function daysLeft(expires) {
+  if (!expires) return null;
+  return Math.round((parseIso(expires) - parseIso(todayIso())) / DAY_MS);
+}
+function expiryLabel(expires) {
+  const d = daysLeft(expires);
+  if (d == null) return "";
+  if (d < 0) return "⚠️ à jeter ?";
+  if (d === 0) return "⚠️ aujourd'hui";
+  if (d === 1) return "⚠️ demain";
+  return `⏳ ${d} j`;
+}
+const KEEP_OPTIONS = [["", "—"], [0, "Aujourd'hui"], [1, "1 jour"], [2, "2 jours"], [3, "3 jours"], [5, "5 jours"], [7, "1 semaine"], [14, "2 semaines"], [30, "1 mois"]];
+
 const fmtClock = (sec) => {
   sec = Math.max(0, Math.round(sec));
   const h = Math.floor(sec / 3600);
@@ -607,6 +622,17 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .toast ha-icon { --mdc-icon-size: 20px; flex-shrink: 0; }
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
 
+/* Frigo mémorisé */
+.memory { border-color: color-mix(in srgb, #22b8a7 45%, var(--fm-divider)); }
+.urgent { margin-top: 10px; padding: 8px 12px; border-radius: 10px; font-size: 14px; background: color-mix(in srgb, var(--fm-warning) 16%, transparent); }
+.chip.urgent-chip { border-color: var(--fm-warning); background: color-mix(in srgb, var(--fm-warning) 14%, transparent); }
+.hero.compact { padding: 18px 20px; }
+.hero.compact .logo { width: 56px; height: 56px; }
+.hero.compact .perks { display: none; }
+select.keep { flex: 0 0 auto; max-width: 104px; border: 1px solid var(--fm-divider); border-radius: 14px; background: var(--fm-bg); color: var(--fm-text2); font-size: 13px; padding: 4px 6px; min-height: 30px; }
+select.keep.soon { border-color: var(--fm-warning); color: var(--fm-text); }
+select.keep.danger { border-color: var(--fm-error); color: var(--fm-error); font-weight: 600; }
+
 /* Écran Frigo */
 .hero { text-align: center; padding: 28px 20px; }
 .hero .emoji { font-size: 64px; line-height: 1; }
@@ -630,6 +656,9 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .ing-row:last-child { border-bottom: 0; }
 .ing-row input { flex: 1; min-width: 0; border: 0; background: transparent; min-height: 40px; font-size: 16px; outline: none; padding: 0 4px; }
 .ing-row input.amount { flex: 0 0 96px; color: var(--fm-text2); font-size: 14px; text-align: right; }
+.ing-row.mem .ing-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ing-row.mem .ing-main input { flex: none; width: 100%; min-height: 30px; }
+.ing-row.mem .ing-main input.amount { text-align: left; font-size: 13px; min-height: 22px; margin-top: -4px; }
 .ing-row .icon-btn { width: 36px; height: 36px; color: var(--fm-text2); }
 
 .result { cursor: pointer; }
@@ -828,6 +857,7 @@ class FrigoMalinPanel extends HTMLElement {
       list: { items: [], loaded: false, error: null, quick: "", showDone: false, menuWeek: "this", menu: null },
       suggestions: [],
       recipesView: "mine",
+      fridgeMemory: { items: [], updated: null, days: 5 },
       library: { loaded: false, loading: false, recipes: [], theme: "", type: "", search: "", fitHousehold: true, seasonOnly: false, ideas: [], ideasLoading: false, error: null },
       stack: [],
       toast: null,
@@ -933,6 +963,7 @@ class FrigoMalinPanel extends HTMLElement {
     this._render();
     this._subscribeList();
     this._loadSuggestions();
+    this._loadFridgeMemory();
     if (this._restoreCookSession()) this._render();
     this._applyRoute();
     if (!this._onLocation) {
@@ -1156,6 +1187,7 @@ class FrigoMalinPanel extends HTMLElement {
     this._setPath(path, value);
     if (el.dataset.live === "recipes") this._renderRecipeList();
     if (el.dataset.live === "pick") this._renderPickList();
+    if (path.startsWith("fridge.ingredients.")) this._syncFridgeMemory();
     if (el.dataset.live === "library") {
       const list = this.shadowRoot.getElementById("lib-list");
       if (list) list.innerHTML = this._tplLibItems();
@@ -1183,6 +1215,13 @@ class FrigoMalinPanel extends HTMLElement {
       const file = el.files[0];
       el.value = "";
       await this._analysePhoto(file);
+    } else if (kind === "ing-days") {
+      const ing = this.s.fridge.ingredients[Number(el.dataset.i)];
+      if (ing) {
+        ing.expires = el.value === "" ? null : addDays(todayIso(), Number(el.value));
+        this._syncFridgeMemory();
+        this._render();
+      }
     } else if (kind === "notes-save") {
       const recipe = this._overlayRecipe();
       if (recipe && recipe.id) {
@@ -1502,6 +1541,23 @@ class FrigoMalinPanel extends HTMLElement {
       case "pick-photo":
         this.shadowRoot.getElementById(d.input).click();
         return;
+      case "memory-use":
+        this._useFridgeMemory();
+        return;
+      case "memory-clear": {
+        const ok = await this._confirm({ title: "Oublier le frigo ?", message: "Les aliments mémorisés seront effacés. Vous pourrez reprendre une photo.", confirm: "Oublier" });
+        if (!ok) return;
+        this.s.fridgeMemory = await this._ws("fridge/memory/clear");
+        if (s.fridge.fromMemory) s.fridge = this._freshFridge();
+        this._toast("🧊 Frigo oublié");
+        this._render();
+        this._renderOverlay();
+        return;
+      }
+      case "set-fridge-days":
+        this.top.draft.fridge_days = Number(d.value);
+        this._renderOverlay();
+        return;
       case "manual-list":
         s.fridge.step = "review";
         s.fridge.photo = null;
@@ -1509,13 +1565,15 @@ class FrigoMalinPanel extends HTMLElement {
         return;
       case "ing-remove":
         s.fridge.ingredients.splice(Number(d.i), 1);
+        this._syncFridgeMemory();
         this._render();
         return;
       case "ing-add": {
         const names = String(s.fridge.newIng || "").split(",").map((x) => x.trim()).filter(Boolean);
         if (!names.length) return;
-        for (const name of names) s.fridge.ingredients.push({ name, amount: "" });
+        for (const name of names) s.fridge.ingredients.push({ name, amount: "", expires: null });
         s.fridge.newIng = "";
+        this._syncFridgeMemory();
         this._render();
         this.shadowRoot.getElementById("new-ing")?.focus();
         return;
@@ -1895,6 +1953,10 @@ class FrigoMalinPanel extends HTMLElement {
         const total = (this._overlayRecipe()?.steps || []).length;
         top.step = Math.max(-1, Math.min(total, top.step + (action === "cook-next" ? 1 : -1)));
         top.showIng = false;
+        if (top.step === total && !top.consumed) {
+          top.consumed = true;
+          this._consumeAfterCook(this._overlayRecipe());
+        }
         this._renderOverlay();
         return;
       }
@@ -2105,6 +2167,7 @@ class FrigoMalinPanel extends HTMLElement {
         this._subscribeList();
       }
       if (this.s.list.storeId && this.s.list.storeId !== "standard" && !res.settings.stores.some((x) => x.id === this.s.list.storeId)) this._pickStore(null);
+      this._loadFridgeMemory();
       this.s.stack.pop();
       this._toast("Réglages enregistrés");
       this._render();
@@ -2430,6 +2493,57 @@ class FrigoMalinPanel extends HTMLElement {
 
   /* ---------------- frigo */
 
+  /* ---------------- frigo mémorisé */
+
+  async _loadFridgeMemory() {
+    try {
+      this.s.fridgeMemory = await this._ws("fridge/memory");
+    } catch (_) {
+      /* pas grave */
+    }
+    if (this.s.tab === "fridge" && this.s.fridge.step === "start") this._render();
+  }
+
+  _fridgeItemsForSave() {
+    return this.s.fridge.ingredients.map((i) => ({ name: i.name, amount: i.amount || "", expires: i.expires || null }));
+  }
+
+  /* Les modifications de la liste (aliment retiré, ajouté, date) sont enregistrées dans la mémoire du frigo. */
+  _syncFridgeMemory() {
+    if (!this.s.fridge.fromMemory) return;
+    clearTimeout(this._fridgeSync);
+    this._fridgeSync = setTimeout(async () => {
+      try {
+        this.s.fridgeMemory = await this._ws("fridge/memory/save", { items: this._fridgeItemsForSave(), mode: "replace" });
+      } catch (_) {
+        /* pas grave */
+      }
+    }, 600);
+  }
+
+  _useFridgeMemory() {
+    const f = this.s.fridge;
+    f.ingredients = this.s.fridgeMemory.items.map((i) => ({ ...i }));
+    f.fromMemory = true;
+    f.photo = null;
+    f.error = null;
+    f.step = "review";
+    this._render();
+  }
+
+  async _consumeAfterCook(recipe) {
+    if (!recipe || !this.s.fridgeMemory.items.length) return;
+    try {
+      const res = await this._ws("fridge/memory/consume", { names: recipe.ingredients.map((i) => i.name) });
+      this.s.fridgeMemory = res;
+      if (res.removed.length) {
+        setTimeout(() => this._toast(`🧊 Retiré du frigo : ${res.removed.join(", ")}`), 1500);
+      }
+    } catch (_) {
+      /* pas grave */
+    }
+  }
+
   async _analysePhoto(file) {
     const f = this.s.fridge;
     f.error = null;
@@ -2443,9 +2557,36 @@ class FrigoMalinPanel extends HTMLElement {
     this._render();
     try {
       const res = await this._ws("fridge/detect", { image: f.photo.split(",")[1], mime: "image/jpeg" });
-      const known = new Set(f.ingredients.map((i) => i.name.toLowerCase()));
-      for (const ing of res.ingredients) if (!known.has(ing.name.toLowerCase())) f.ingredients.push(ing);
-      if (!res.ingredients.length) f.error = "Je n'ai rien reconnu sur cette photo. Ajoutez les ingrédients à la main ou reprenez une photo plus nette.";
+      if (!res.ingredients.length) {
+        f.error = "Je n'ai rien reconnu sur cette photo. Ajoutez les ingrédients à la main ou reprenez une photo plus nette.";
+      } else {
+        // Un frigo est déjà mémorisé : on demande s'il faut le compléter ou le remplacer.
+        let mode = "replace";
+        if (this.s.fridgeMemory.items.length) {
+          f.step = "review";
+          this._render();
+          mode = await this._ask({
+            title: "🧊 Mettre à jour mon frigo",
+            message: `Vous avez déjà ${this.s.fridgeMemory.items.length} aliments mémorisés. Cette photo les complète (frigo + placard, par exemple) ou les remplace ?`,
+            buttons: [
+              { label: "➕ Compléter", value: "merge", style: "tonal" },
+              { label: "🔄 Remplacer", value: "replace" },
+            ],
+          });
+        }
+        if (mode) {
+          const keep = f.fromMemory || mode === "merge" ? [] : f.ingredients.filter((i) => !i.expires);
+          const memory = await this._ws("fridge/memory/save", { items: res.ingredients, mode });
+          this.s.fridgeMemory = memory;
+          const names = new Set(memory.items.map((i) => foldText(i.name)));
+          f.ingredients = [...memory.items.map((i) => ({ ...i })), ...keep.filter((i) => !names.has(foldText(i.name)))];
+          f.fromMemory = true;
+        } else {
+          // Annulé : on garde ce qui est reconnu pour cette fois, sans toucher à la mémoire.
+          const known = new Set(f.ingredients.map((i) => foldText(i.name)));
+          for (const ing of res.ingredients) if (!known.has(foldText(ing.name))) f.ingredients.push(ing);
+        }
+      }
     } catch (err) {
       f.error = this._err(err);
     }
@@ -2465,8 +2606,10 @@ class FrigoMalinPanel extends HTMLElement {
     f.error = null;
     this._render();
     try {
+      const priority = f.ingredients.filter((i) => i.expires && daysLeft(i.expires) <= 2).map((i) => i.name);
       const res = await this._ws("fridge/suggest", {
         ingredients,
+        priority,
         style: f.style,
         count: Number(f.count) || 3,
         servings: Number(f.servings) || 4,
@@ -2966,7 +3109,8 @@ class FrigoMalinPanel extends HTMLElement {
 
     if (f.step === "start") {
       return `${inputs}
-        <div class="card hero">
+        ${this._tplFridgeMemory()}
+        <div class="card hero ${this.s.fridgeMemory.items.length ? "compact" : ""}">
           ${LOGO_SVG}
           <h2>Qu'y a-t-il dans votre frigo ?</h2>
           <p class="muted">Prenez une photo : je reconnais les ingrédients, vous corrigez la liste, et je vous propose des recettes.</p>
@@ -3024,11 +3168,25 @@ class FrigoMalinPanel extends HTMLElement {
           <h3 class="grow" style="margin:0 0 0 6px">Ingrédients (${f.ingredients.length})</h3>
           <button class="icon-btn" data-action="pick-photo" data-input="cam" aria-label="Ajouter une photo" title="Ajouter une photo">${icon("camera-plus-outline")}</button>
         </div>
-        <p class="muted small" style="margin:0 0 8px">Corrigez, supprimez ou ajoutez ce qui manque.</p>
+        <p class="muted small" style="margin:0 0 8px">Corrigez, supprimez ou ajoutez ce qui manque.${f.fromMemory ? " 🧊 Les changements sont gardés en mémoire." : ""}</p>
+        ${(() => {
+          const urgent = f.ingredients.filter((i) => i.expires && daysLeft(i.expires) <= 2);
+          return urgent.length ? `<div class="urgent" style="margin-bottom:8px">⚠️ ${urgent.length} aliment${urgent.length > 1 ? "s" : ""} à consommer vite : les recettes les utiliseront en priorité.</div>` : "";
+        })()}
         <div>
           ${f.ingredients
             .map(
-              (ing, i) => `<div class="ing-row">
+              (ing, i) => f.fromMemory
+                ? `<div class="ing-row mem">
+                <span class="ing-emoji">${ingEmoji(ing.name)}</span>
+                <div class="ing-main">
+                  <input value="${esc(ing.name)}" data-model="fridge.ingredients.${i}.name" aria-label="Ingrédient">
+                  ${ing.amount ? `<input class="amount" value="${esc(ing.amount)}" data-model="fridge.ingredients.${i}.amount" aria-label="Quantité">` : ""}
+                </div>
+                ${this._tplKeepSelect(ing, i)}
+                <button class="icon-btn" data-action="ing-remove" data-i="${i}" aria-label="Retirer">${icon("close")}</button>
+              </div>`
+                : `<div class="ing-row">
                 <span class="ing-emoji">${ingEmoji(ing.name)}</span>
                 <input value="${esc(ing.name)}" data-model="fridge.ingredients.${i}.name" aria-label="Ingrédient">
                 ${ing.amount ? `<input class="amount" value="${esc(ing.amount)}" data-model="fridge.ingredients.${i}.amount" aria-label="Quantité">` : ""}
@@ -3270,6 +3428,16 @@ class FrigoMalinPanel extends HTMLElement {
       <label class="field"><span>Autres consignes pour l'IA</span>
         <textarea class="input" rows="3" placeholder="Ex. : pas de coriandre, poisson le vendredi, plats qui se réchauffent pour le midi…" data-model="top.draft.notes">${esc(d.notes)}</textarea></label>
 
+      <div class="set-sec">${bubble("fridge-outline", COLORS.teal)}<h3>Frigo mémorisé</h3></div>
+      <div class="field"><span>Combien de temps garder la dernière photo du frigo</span>
+        <div class="chips">
+          ${[[3, "3 jours"], [5, "5 jours"], [7, "1 semaine"], [14, "2 semaines"], [0, "Jusqu'à la prochaine photo"]]
+            .map(([v, label]) => `<button class="chip ${Number(d.fridge_days ?? 5) === v ? "on" : ""}" data-action="set-fridge-days" data-value="${v}">${label}</button>`)
+            .join("")}
+        </div>
+      </div>
+      <button class="btn danger block" data-action="memory-clear" ${this.s.fridgeMemory.items.length ? "" : "disabled"}>${icon("delete-outline")} Oublier le contenu du frigo${this.s.fridgeMemory.items.length ? ` (${this.s.fridgeMemory.items.length} aliments)` : ""}</button>
+
       <div class="set-sec">${bubble("robot-outline", COLORS.indigo)}<h3>Intelligence artificielle</h3></div>
       <div class="segmented">
         <button class="${d.ai_mode !== "single" ? "on" : ""}" data-action="set" data-path="top.draft.ai_mode" data-value="economy">💡 Économique</button>
@@ -3487,6 +3655,42 @@ class FrigoMalinPanel extends HTMLElement {
   _allergySummary() {
     const all = [...new Set(this.settings.members.flatMap((m) => m.allergies))];
     return all.length ? `, sans ${all.map((a) => HH.allergens[a].toLowerCase()).join(", ")}` : "";
+  }
+
+  _tplKeepSelect(ing, i) {
+    const d = daysLeft(ing.expires);
+    const current = d == null ? "" : KEEP_OPTIONS.reduce((best, [v]) => (v === "" ? best : Math.abs(v - d) < Math.abs(best - d) ? v : best), 0);
+    const cls = d == null ? "" : d <= 1 ? "danger" : d <= 3 ? "soon" : "";
+    return `<select class="keep ${cls}" data-change="ing-days" data-i="${i}" aria-label="Se garde encore" title="Se garde encore">
+      ${d != null && d < 0 ? `<option selected>⚠️ dépassé</option>` : ""}
+      ${KEEP_OPTIONS.map(([v, label]) => `<option value="${v}" ${d != null && d >= 0 && v === current ? "selected" : ""} ${d == null && v === "" ? "selected" : ""}>${v === "" ? "⏳ ?" : d != null && v === current ? expiryLabel(ing.expires) : label}</option>`).join("")}
+    </select>`;
+  }
+
+  _tplFridgeMemory() {
+    const mem = this.s.fridgeMemory;
+    if (!mem.items.length) return "";
+    const ago = mem.updated ? Math.round((Date.now() - new Date(mem.updated).getTime()) / DAY_MS) : 0;
+    const when = ago <= 0 ? "aujourd'hui" : ago === 1 ? "hier" : `il y a ${ago} jours`;
+    const urgent = mem.items.filter((i) => i.expires && daysLeft(i.expires) <= 2);
+    return `<div class="card memory">
+      <div class="row" style="align-items:flex-start">
+        ${bubble("fridge-outline", COLORS.teal)}
+        <div class="grow">
+          <h3 style="margin:0">Dans mon frigo</h3>
+          <div class="muted small">${mem.items.length} aliment${mem.items.length > 1 ? "s" : ""} · photo ${when}${mem.days ? ` · gardé ${mem.days} jours` : ""}</div>
+        </div>
+        <button class="icon-btn" data-action="memory-clear" aria-label="Oublier le contenu du frigo" title="Oublier">${icon("delete-outline")}</button>
+      </div>
+      ${urgent.length
+        ? `<div class="urgent">⚠️ À consommer vite : ${urgent.map((i) => `<b>${esc(i.name)}</b> (${esc(expiryLabel(i.expires).replace(/^⚠️ |^⏳ /, ""))})`).join(", ")}</div>`
+        : `<div class="muted small" style="margin:8px 0 0">✅ Rien ne presse pour l'instant.</div>`}
+      <div class="chips" style="margin:10px 0 12px">${mem.items
+        .slice(0, 14)
+        .map((i) => `<span class="chip ${i.expires && daysLeft(i.expires) <= 2 ? "urgent-chip" : ""}">${ingEmoji(i.name)} ${esc(i.name)}</span>`)
+        .join("")}${mem.items.length > 14 ? `<span class="chip">+${mem.items.length - 14}</span>` : ""}</div>
+      <button class="btn block big" data-action="memory-use">💡 Des idées avec ce qu'il me reste</button>
+    </div>`;
   }
 
   _tplStepper(path, value, suffix = "", min = 1, max = 30, stepBy = 1) {

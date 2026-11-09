@@ -152,7 +152,7 @@ async def test_fridge_and_import(hass: HomeAssistant, hass_ws_client, aioclient_
     )
     detected = await ws("fridge/detect", image="aGVsbG8=", mime="image/jpeg")
     assert detected["success"], detected
-    assert detected["result"]["ingredients"] == [{"name": "tomates", "amount": "4"}]
+    assert detected["result"]["ingredients"] == [{"name": "tomates", "amount": "4", "keeps_days": None}]
     # 1 M de jetons en entrée et 100 k en sortie avec Haiku : 0,15 $ ≈ 0,14 €.
     usage = (await ws("config"))["result"]["usage"]
     assert usage == {"eur": 0.14, "calls": 1}
@@ -640,3 +640,64 @@ async def test_move_and_copy_meals(hass: HomeAssistant, hass_ws_client) -> None:
     assert copied["success"], copied
     assert len(copied["result"]["entries"]) == 2
     assert sorted(await _todo_items(hass)) == ["Poireaux (2)", "Pommes de terre (500 g)"]
+
+
+async def test_fridge_memory(hass: HomeAssistant, hass_ws_client, aioclient_mock) -> None:
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    entry = await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    # La photo renvoie une durée de conservation estimée par l'IA.
+    aioclient_mock.post(
+        "https://api.anthropic.com/v1/messages",
+        json={"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({"ingredients": [
+            {"name": "salade", "amount": "1", "keeps_days": 2}, {"name": "yaourts", "amount": "4", "keeps_days": 10},
+            {"name": "pâtes", "amount": "", "keeps_days": None}]})}]},
+    )
+    detected = (await ws("fridge/detect", image="aGVsbG8="))["result"]["ingredients"]
+    assert detected[0]["keeps_days"] == 2
+
+    saved = (await ws("fridge/memory/save", items=detected, mode="replace"))["result"]
+    today = dt_util.now().date()
+    assert [i["name"] for i in saved["items"]] == ["salade", "yaourts", "pâtes"]  # le plus urgent d'abord
+    assert saved["items"][0]["expires"] == (today + timedelta(days=2)).isoformat()
+    assert saved["items"][2]["expires"] is None
+
+    # Compléter : un aliment déjà connu est mis à jour, les autres restent.
+    merged = (await ws("fridge/memory/save", items=[{"name": "Salade", "keeps_days": 3}, {"name": "beurre"}], mode="merge"))["result"]
+    assert sorted(i["name"] for i in merged["items"]) == ["Salade", "beurre", "pâtes", "yaourts"]
+    # Remplacer : seule la nouvelle photo compte.
+    replaced = (await ws("fridge/memory/save", items=[{"name": "lait"}], mode="replace"))["result"]
+    assert [i["name"] for i in replaced["items"]] == ["lait"]
+
+    # Après avoir cuisiné, les ingrédients utilisés sortent du frigo.
+    await ws("fridge/memory/save", items=[{"name": "tomates"}, {"name": "crème fraîche"}, {"name": "lait"}], mode="replace")
+    consumed = (await ws("fridge/memory/consume", names=["Tomates", "crème fraîche épaisse", "farine"]))["result"]
+    assert sorted(consumed["removed"]) == ["crème fraîche", "tomates"]
+    assert [i["name"] for i in consumed["items"]] == ["lait"]
+
+    # Mémoire trop ancienne (réglage : 5 jours) : oubliée.
+    entry.runtime_data.store.fridge["updated"] = (dt_util.utcnow() - timedelta(days=6)).isoformat()
+    assert (await ws("fridge/memory"))["result"]["items"] == []
+    # « Jusqu'à la prochaine photo » : jamais oubliée.
+    await ws("settings/save", settings={"fridge_days": 0})
+    assert [i["name"] for i in (await ws("fridge/memory"))["result"]["items"]] == ["lait"]
+    await ws("fridge/memory/clear")
+    assert (await ws("fridge/memory"))["result"]["items"] == []
+
+    # Les idées utilisent d'abord ce qui va se perdre.
+    aioclient_mock.clear_requests()
+    aioclient_mock.post(
+        "https://api.anthropic.com/v1/messages",
+        json={"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({"recipes": []})}]},
+    )
+    await ws("fridge/suggest", ingredients=["salade", "yaourts"], priority=["salade"])
+    prompt = aioclient_mock.mock_calls[-1][2]["messages"][0]["content"][-1]["text"]
+    assert "EN PRIORITÉ" in prompt and "salade" in prompt

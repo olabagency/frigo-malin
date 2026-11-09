@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -67,6 +67,8 @@ class FrigoStore:
         self.shopping_items: list[dict[str, Any]] = []
         # Dépenses d'IA estimées par mois : {"2026-11": {"usd": 0.42, "calls": 12}}.
         self.usage: dict[str, dict[str, float]] = {}
+        # Frigo mémorisé : {"items": [{"name", "amount", "expires"}], "updated": iso}.
+        self.fridge: dict[str, Any] = {"items": [], "updated": None}
         self._listeners: list[Callable[[], None]] = []
 
     async def async_load(self) -> None:
@@ -78,6 +80,7 @@ class FrigoStore:
         self.settings = normalize_settings(data.get("settings"))
         self.shopping_items = data.get("shopping_items", [])
         self.usage = data.get("usage", {})
+        self.fridge = data.get("fridge", {"items": [], "updated": None})
 
     def set_last_version(self, version: str) -> None:
         self.last_version = version
@@ -92,7 +95,62 @@ class FrigoStore:
             "settings": self.settings,
             "shopping_items": self.shopping_items,
             "usage": self.usage,
+            "fridge": self.fridge,
         }
+
+    # ------------------------------------------------------------------ frigo mémorisé
+
+    def fridge_items(self) -> list[dict[str, Any]]:
+        """Contenu mémorisé, s'il n'est pas trop ancien (réglage fridge_days ; 0 = sans limite)."""
+        updated = self.fridge.get("updated")
+        days = int(self.settings.get("fridge_days", 5))
+        if not updated:
+            return []
+        if days and dt_util.parse_datetime(updated) < dt_util.utcnow() - timedelta(days=days):
+            return []
+        items = list(self.fridge.get("items", []))
+        items.sort(key=lambda i: (i.get("expires") is None, i.get("expires") or ""))
+        return items
+
+    def save_fridge(self, items: list[dict[str, Any]], mode: str = "replace") -> list[dict[str, Any]]:
+        """Remplace ou complète le frigo mémorisé (même aliment : mis à jour)."""
+        current = self.fridge_items() if mode == "merge" else []
+        by_key = {shopping_key(i["name"]): i for i in current}
+        for raw in items:
+            name = str(raw.get("name") or "").strip()
+            if not name:
+                continue
+            expires = raw.get("expires")
+            if raw.get("keeps_days") is not None:
+                expires = (dt_util.now().date() + timedelta(days=int(raw["keeps_days"]))).isoformat()
+            by_key[shopping_key(name)] = {
+                "name": name,
+                "amount": str(raw.get("amount") or "").strip()[:40],
+                "expires": str(expires)[:10] if expires else None,
+            }
+        self.fridge = {"items": list(by_key.values())[:150], "updated": dt_util.utcnow().isoformat()}
+        self._save()
+        return self.fridge_items()
+
+    def clear_fridge(self) -> None:
+        self.fridge = {"items": [], "updated": None}
+        self._save()
+
+    def consume_fridge(self, names: list[str]) -> list[str]:
+        """Retire du frigo les aliments utilisés par une recette. Renvoie ceux retirés."""
+        wanted = {shopping_key(n) for n in names if n}
+        wanted_first = {w.split(" ")[0] for w in wanted if w}
+        kept, removed = [], []
+        for item in self.fridge.get("items", []):
+            key = shopping_key(item["name"])
+            if key in wanted or (key.split(" ")[0] in wanted_first and len(key.split(" ")[0]) >= 4):
+                removed.append(item["name"])
+            else:
+                kept.append(item)
+        if removed:
+            self.fridge = {**self.fridge, "items": kept}
+            self._save()
+        return removed
 
     def record_usage(self, cost_usd: float) -> None:
         month = dt_util.now().strftime("%Y-%m")
