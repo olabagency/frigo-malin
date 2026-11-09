@@ -3,7 +3,6 @@
 # Frigo Malin par Adri 🥕
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
-[![Validation](https://github.com/olabagency/frigo-malin/actions/workflows/validate.yml/badge.svg)](https://github.com/olabagency/frigo-malin/actions/workflows/validate.yml)
 
 Une intégration Home Assistant pour cuisiner avec ce qu'il y a dans le frigo, garder ses recettes au même endroit et préparer les courses de la semaine.
 
@@ -124,7 +123,7 @@ pytest
 
    (`patch` pour un correctif, `minor` pour une nouveauté, `major` pour un changement important, ou un numéro précis comme `1.4.0`.)
 2. Complétez la section créée dans `CHANGELOG.md`, committez et poussez sur `main`.
-3. Sur GitHub, publiez une **release** nommée `v1.1.0` (même numéro). HACS la propose alors en mise à jour ; un workflow vérifie que le numéro du tag correspond au code.
+3. La release `vX.Y.Z` est créée automatiquement sur GitHub dès que le nouveau numéro arrive sur `main` ; HACS la propose alors en mise à jour. Avant de pousser, lancez les tests (`pytest`) et `python3 scripts/check_version.py`.
 
 Si le format des données enregistrées change, augmentez `STORAGE_MINOR_VERSION` (ajout compatible) ou `STORAGE_VERSION` (changement de structure) dans `const.py` et écrivez la conversion dans `store.py`. Pour les réglages de l'intégration, c'est `MINOR_VERSION` / `VERSION` dans `config_flow.py` et `async_migrate_entry` dans `__init__.py`.
 
