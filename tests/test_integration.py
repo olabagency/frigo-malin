@@ -701,3 +701,32 @@ async def test_fridge_memory(hass: HomeAssistant, hass_ws_client, aioclient_mock
     await ws("fridge/suggest", ingredients=["salade", "yaourts"], priority=["salade"])
     prompt = aioclient_mock.mock_calls[-1][2]["messages"][0]["content"][-1]["text"]
     assert "EN PRIORITÉ" in prompt and "salade" in prompt
+
+
+async def test_nutrition_is_attached_and_completed(hass: HomeAssistant, hass_ws_client) -> None:
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    async def ws(msg_type: str, **payload):
+        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
+        return await client.receive_json()
+
+    saved = (await ws("recipes/save", recipe={"title": "Bowl", "servings": 2, "ingredients": ["200 g de riz", "2 bok choy"], "steps": ["Cuire"]}))["result"]["recipe"]
+    assert saved["nutrition"]["kcal"] == 350
+    assert saved["nutrition"]["unknown"] == ["bok choy"]
+
+    estimate = AsyncMock(return_value={"bok choy": {"name": "bok choy", "kcal": 13, "protein": 1.5, "carbs": 2, "fat": 0.2, "fiber": 1, "piece_g": 300}})
+    with patch("custom_components.frigo_malin.ai.AIClient.estimate_foods", estimate):
+        res = await ws("nutrition/complete", names=["bok choy"], ingredients=saved["ingredients"], servings=2)
+        assert res["success"], res
+        assert res["result"]["added"] == 1
+        assert res["result"]["nutrition"]["unknown"] == []
+        # Déjà connu : l'IA n'est pas rappelée.
+        await ws("nutrition/complete", names=["bok choy"])
+    assert estimate.await_count == 1
+
+    listed = (await ws("recipes/list"))["result"]["recipes"]
+    bowl = next(r for r in listed if r["title"] == "Bowl")
+    assert bowl["nutrition"]["kcal"] == 350 + 39 and bowl["nutrition"]["ai"]
+    library = (await ws("library/list"))["result"]["recipes"]
+    assert all("nutrition" in r for r in library)

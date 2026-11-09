@@ -92,6 +92,7 @@ TASK_TIERS = {
     "plan": "top",  # planifier la semaine
     "recipe": "top",  # écrire les recettes du menu
     "photo": "top",  # lire une recette photographiée (manuscrite…)
+    "nutrition": "light",  # valeurs nutritionnelles d'aliments absents de la table
 }
 TIER_MODELS = {
     PROVIDER_ANTHROPIC: {"light": "claude-haiku-5-5", "mid": "claude-sonnet-5-5"},
@@ -264,6 +265,27 @@ class AIClient:
             raise AIError("La réponse de l'IA était illisible. Réessayez.") from err
 
     # ------------------------------------------------------------------ usages
+
+    async def estimate_foods(self, names: list[str]) -> dict[str, dict[str, Any]]:
+        """Valeurs nutritionnelles moyennes pour 100 g d'aliments inconnus de la table."""
+        names = [n for n in dict.fromkeys(n.strip() for n in names) if n][:40]
+        if not names:
+            return {}
+        prompt = (
+            "Pour chaque aliment ci-dessous (ingrédients de recettes françaises), donne ses valeurs nutritionnelles "
+            "moyennes pour 100 g, tel qu'on l'achète (cru s'il se cuisine), d'après les tables de référence (Ciqual, USDA). "
+            "Donne aussi le poids moyen d'une pièce en grammes quand on le compte à l'unité (sinon null). "
+            "Marque negligible: true pour ce qui ne compte pas (épices, herbes, sel, eau, arômes).\n\n"
+            + "\n".join(f"- {n}" for n in names)
+            + '\n\nRéponds avec ce JSON :\n{"foods": [{"name": "nom exact de la liste", "kcal": 0, "protein": 0, '
+            '"carbs": 0, "fat": 0, "fiber": 0, "piece_g": null, "negligible": false}]}'
+        )
+        data = await self._complete(prompt, max_tokens=4000, task="nutrition")
+        result: dict[str, dict[str, Any]] = {}
+        for item in data.get("foods", []) if isinstance(data, dict) else []:
+            if isinstance(item, dict) and str(item.get("name") or "").strip():
+                result[str(item["name"]).strip()] = item
+        return result
 
     async def detect_ingredients(self, image_b64: str, mime: str) -> list[dict[str, str]]:
         data = await self._complete(DETECT_PROMPT, (image_b64, mime), task="detect")

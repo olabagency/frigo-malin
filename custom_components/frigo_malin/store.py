@@ -69,6 +69,8 @@ class FrigoStore:
         self.usage: dict[str, dict[str, float]] = {}
         # Frigo mémorisé : {"items": [{"name", "amount", "expires"}], "updated": iso}.
         self.fridge: dict[str, Any] = {"items": [], "updated": None}
+        # Valeurs nutritionnelles estimées par l'IA pour les aliments absents de la table : clé -> {kcal, protein…}.
+        self.foods: dict[str, dict[str, Any]] = {}
         self._listeners: list[Callable[[], None]] = []
 
     async def async_load(self) -> None:
@@ -81,6 +83,7 @@ class FrigoStore:
         self.shopping_items = data.get("shopping_items", [])
         self.usage = data.get("usage", {})
         self.fridge = data.get("fridge", {"items": [], "updated": None})
+        self.foods = data.get("foods", {})
 
     def set_last_version(self, version: str) -> None:
         self.last_version = version
@@ -96,6 +99,7 @@ class FrigoStore:
             "shopping_items": self.shopping_items,
             "usage": self.usage,
             "fridge": self.fridge,
+            "foods": self.foods,
         }
 
     # ------------------------------------------------------------------ frigo mémorisé
@@ -213,6 +217,13 @@ class FrigoStore:
             listener()
 
     # ------------------------------------------------------------------ recettes
+
+    def save_foods(self, foods: dict[str, dict[str, Any]]) -> None:
+        self.foods.update(foods)
+        # Garde-fou : le cache ne grossit pas sans fin.
+        if len(self.foods) > 3000:
+            self.foods = dict(list(self.foods.items())[-3000:])
+        self._save()
 
     def save_recipe(self, raw: dict[str, Any], default_servings: int = DEFAULT_SERVINGS) -> dict[str, Any]:
         recipe_id = raw.get("id")

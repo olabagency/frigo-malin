@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.10.0";
+const FM_VERSION = "1.11.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -317,6 +317,14 @@ function expiryLabel(expires) {
 }
 const KEEP_OPTIONS = [["", "—"], [0, "Aujourd'hui"], [1, "1 jour"], [2, "2 jours"], [3, "3 jours"], [5, "5 jours"], [7, "1 semaine"], [14, "2 semaines"], [30, "1 mois"]];
 
+/* Macronutriments par portion (calculés par le serveur). */
+const NUT_COLORS = { protein: "#e53935", carbs: "#f9a825", fat: "#1e88e5", fiber: "#43a047" };
+function nutBadge(r) {
+  const n = r && r.nutrition;
+  if (!n || !n.kcal) return "";
+  return `🔥 ${n.kcal} kcal · 💪 ${fmtNumber(n.protein)} g prot.`;
+}
+
 const fmtClock = (sec) => {
   sec = Math.max(0, Math.round(sec));
   const h = Math.floor(sec / 3600);
@@ -621,6 +629,22 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .toast { display: flex; align-items: center; gap: 10px; }
 .toast ha-icon { --mdc-icon-size: 20px; flex-shrink: 0; }
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
+
+/* Valeurs nutritionnelles */
+.nut { padding: 14px 16px; }
+.nut-kcal { font-size: 15px; color: var(--fm-text2); display: flex; align-items: center; gap: 8px; }
+.nut-kcal b { font-size: 28px; color: var(--fm-text); }
+.nut-kcal.sm b { font-size: 20px; }
+.nut-bar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; margin: 10px 0 12px; background: var(--fm-divider); }
+.nut-bar i { display: block; height: 100%; }
+.nut-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; }
+.nut-grid > div { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 13px; color: var(--fm-text2); }
+.nut-grid b { font-size: 16px; color: var(--fm-text); }
+.nut-grid small { font-size: 11px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.nut-day { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--fm-text2); white-space: nowrap; }
+.week-nut { padding: 12px 14px; }
+.week-nut .nut-bar { margin: 10px 0 8px; height: 8px; }
 
 /* Accueil */
 .home-hello { margin: 4px 2px 14px; }
@@ -1021,6 +1045,7 @@ class FrigoMalinPanel extends HTMLElement {
     this._loadSuggestions();
     this._loadFridgeMemory();
     this._loadHome();
+    this._completeNutrition();
     if (this._restoreCookSession()) this._render();
     this._applyRoute();
     if (!this._onLocation) {
@@ -2487,6 +2512,7 @@ class FrigoMalinPanel extends HTMLElement {
       const res = await this._ws("plan/apply", { meals: top.proposal.meals.map(({ locked, replacing, ...m }) => m), servings: Number(top.servings) || 4 });
       const list = await this._ws("recipes/list");
       this.s.recipes = list.recipes;
+      this._completeNutrition();
       this.s.stack.pop();
       this.s.week.start = mondayOf(parseIso(top.start));
       this.s.tab = "week";
@@ -2640,6 +2666,68 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   /* ---------------- frigo */
+
+  /* ---------------- valeurs nutritionnelles */
+
+  /* Aliments absents de la table : demandés une seule fois à l'IA, puis gardés par le serveur. */
+  async _completeNutrition() {
+    this._nutAsked = this._nutAsked || new Set();
+    const names = [];
+    for (const r of this.s.recipes) for (const n of (r.nutrition && r.nutrition.unknown) || []) if (!this._nutAsked.has(foldText(n))) names.push(n);
+    if (!names.length) return;
+    names.forEach((n) => this._nutAsked.add(foldText(n)));
+    try {
+      const res = await this._ws("nutrition/complete", { names: [...new Set(names)].slice(0, 40) });
+      if (res.added) {
+        this.s.recipes = (await this._ws("recipes/list")).recipes;
+        this._renderBehind();
+        this._renderOverlay();
+      }
+    } catch (_) {
+      /* les chiffres restent partiels */
+    }
+  }
+
+  async _completeRecipeNutrition(r) {
+    this._nutAsked = this._nutAsked || new Set();
+    const names = ((r.nutrition && r.nutrition.unknown) || []).filter((n) => !this._nutAsked.has(foldText(n)));
+    if (!names.length) return;
+    names.forEach((n) => this._nutAsked.add(foldText(n)));
+    r.nutritionLoading = true;
+    try {
+      const res = await this._ws("nutrition/complete", { names, ingredients: r.ingredients, servings: r.servings || 4 });
+      if (res.nutrition) r.nutrition = res.nutrition;
+    } catch (_) {
+      /* les chiffres restent partiels */
+    }
+    r.nutritionLoading = false;
+    this._renderOverlay();
+    this._renderBehind();
+  }
+
+  _tplNutrition(r) {
+    const n = r.nutrition;
+    if (!n) return "";
+    if (n.unknown && n.unknown.length && !r.nutritionLoading) queueMicrotask(() => this._completeRecipeNutrition(r));
+    if (!n.kcal && !(n.unknown && n.unknown.length)) return "";
+    const energy = n.protein * 4 + n.carbs * 4 + n.fat * 9 || 1;
+    const pct = (g, k) => Math.round((g * k * 100) / energy);
+    const parts = [
+      ["protein", "Protéines", n.protein, pct(n.protein, 4)],
+      ["carbs", "Glucides", n.carbs, pct(n.carbs, 4)],
+      ["fat", "Lipides", n.fat, pct(n.fat, 9)],
+    ];
+    return `<div class="sec">${bubble("nutrition", COLORS.green)}<h3>Valeurs nutritionnelles</h3><span class="muted small">par portion</span></div>
+      <div class="nut card">
+        <div class="nut-kcal"><b>${n.kcal}</b> kcal ${r.nutritionLoading ? `<span class="spinner sm"></span>` : ""}</div>
+        <div class="nut-bar">${parts.map(([k, , , p]) => `<i style="width:${p}%;background:${NUT_COLORS[k]}"></i>`).join("")}</div>
+        <div class="nut-grid">
+          ${parts.map(([k, label, g, p]) => `<div><span class="dot" style="background:${NUT_COLORS[k]}"></span><b>${fmtNumber(g)} g</b><span>${label}</span><small>${p} %</small></div>`).join("")}
+          <div><span class="dot" style="background:${NUT_COLORS.fiber}"></span><b>${fmtNumber(n.fiber)} g</b><span>Fibres</span><small>&nbsp;</small></div>
+        </div>
+        <p class="muted small" style="margin:10px 0 0">≈ Estimation d'après les ingrédients et leurs quantités (valeurs moyennes, type table Ciqual).${n.ai ? " ✨ Certains aliments estimés par l'IA." : ""}${n.unknown && n.unknown.length && !r.nutritionLoading ? ` Non compté : ${esc(n.unknown.join(", "))}.` : ""}</p>
+      </div>`;
+  }
 
   /* ---------------- accueil */
 
@@ -3340,6 +3428,7 @@ class FrigoMalinPanel extends HTMLElement {
             <div class="when">${esc(this._mealWhen(next))}<span class="date"> · ${esc(fmtDay(next.date, { weekday: "short", day: "numeric", month: "short" }))}</span></div>
             <div class="what">${esc(r ? r.title : "Recette supprimée")}</div>
             <div class="muted small">${r && (r.prep_time || r.cook_time) ? `⏱️ ${(r.prep_time || 0) + (r.cook_time || 0)} min · ` : ""}👥 ${next.servings} pers.</div>
+            ${nutBadge(r) ? `<div class="muted small">${esc(nutBadge(r))} / pers.</div>` : ""}
           </div>
         </div>
         ${r ? `<div class="row" style="gap:8px;margin-top:12px">
@@ -4123,6 +4212,7 @@ class FrigoMalinPanel extends HTMLElement {
       <div class="meta" style="margin-bottom:0">
         ${time ? `<span><span class="ico" style="--c:${COLORS.orange}">${icon("timer-outline")}</span> ${fmtMinutes(time)}</span>` : ""}
         ${r.servings ? `<span><span class="ico" style="--c:${COLORS.blue}">${icon("account-group-outline")}</span> ${r.servings} pers.</span>` : ""}
+        ${r.nutrition && r.nutrition.kcal ? `<span><span class="ico" style="--c:${COLORS.orange}">${icon("fire")}</span> ${r.nutrition.kcal} kcal · ${fmtNumber(r.nutrition.protein)} g prot.</span>` : ""}
       </div>
       ${r.uses && r.uses.length ? `<div class="uses"><b class="ok">✓ Utilise :</b> ${esc(r.uses.join(", "))}</div>` : ""}
       ${r.missing && r.missing.length ? `<div class="uses"><b class="warn">+ À acheter :</b> ${esc(r.missing.join(", "))}</div>` : `<div class="uses ok">Rien à acheter 🎉</div>`}
@@ -4192,7 +4282,7 @@ class FrigoMalinPanel extends HTMLElement {
       ${safeUrl(r.image) ? `<img class="thumb" src="${esc(safeUrl(r.image))}" alt="" loading="lazy">` : `<div class="thumb" style="background:hsl(${hashHue(r.title)} 60% 50% / .15)">${r.emoji || emojiFor(r.title)}</div>`}
       <div class="grow">
         <div class="t">${esc(r.title)}</div>
-        <div class="m">${[time ? fmtMinutes(time) : "", r.servings ? `${r.servings} pers.` : ""].filter(Boolean).join(" · ")}</div>
+        <div class="m">${[time ? fmtMinutes(time) : "", r.servings ? `${r.servings} pers.` : "", nutBadge(r)].filter(Boolean).join(" · ")}</div>
         <div class="badges">
           ${seasonal ? `<span class="tag season">🍂 De saison</span>` : ""}
           ${themes.map((t) => `<span class="tag">${THEME_ICON[t] || ""} ${esc(LIB_THEMES.find((x) => x[0] === t)[2])}</span>`).join("")}
@@ -4326,7 +4416,7 @@ class FrigoMalinPanel extends HTMLElement {
     return list
       .map((r) => {
         const time = totalTime(r);
-        const meta = [time ? fmtMinutes(time) : "", r.servings ? `${r.servings} pers.` : "", `${r.ingredients.length} ingrédients`].filter(Boolean).join(" · ");
+        const meta = [time ? fmtMinutes(time) : "", r.servings ? `${r.servings} pers.` : "", r.nutrition && r.nutrition.kcal ? `🔥 ${r.nutrition.kcal} kcal` : `${r.ingredients.length} ingrédients`].filter(Boolean).join(" · ");
         return `<div class="swipe" data-swipe="${esc(r.id)}">
           <div class="swipe-actions">
             <button class="fav" data-action="swipe-fav" data-id="${esc(r.id)}" aria-label="${r.favorite ? "Retirer des favoris" : "Mettre en favori"}">${icon(r.favorite ? "star-off-outline" : "star")}${r.favorite ? "Retirer" : "Favori"}</button>
@@ -4352,10 +4442,13 @@ class FrigoMalinPanel extends HTMLElement {
     const isCurrent = today >= w.start && today <= end;
     const pending = w.entries.filter((e) => !e.in_shopping_list).length;
     const days = [];
+    const dayTotals = [];
     for (let i = 0; i < 7; i++) {
       const date = addDays(w.start, i);
+      const t = this._dayNutrition(date);
+      if (t) dayTotals.push(t);
       days.push(`<div class="card day ${date === today ? "today" : ""}">
-        <div class="dname">${cap(fmtDay(date, { weekday: "long", day: "numeric" }))}${date === today ? `<span class="now">Aujourd'hui</span>` : ""}</div>
+        <div class="dname">${cap(fmtDay(date, { weekday: "long", day: "numeric" }))}${date === today ? `<span class="now">Aujourd'hui</span>` : ""}${t ? `<span class="nut-day" title="Par personne">🔥 ${t.kcal} kcal · 💪 ${fmtNumber(t.protein)} g</span>` : ""}</div>
         ${["lunch", "dinner"].map((slot) => this._tplSlot(date, slot)).join("")}
       </div>`);
     }
@@ -4370,9 +4463,43 @@ class FrigoMalinPanel extends HTMLElement {
         <button class="btn tonal" data-action="weekplan-open">${icon("creation")} Planifier avec l'IA</button>
         <button class="btn tonal" data-action="copy-open">${icon("content-copy")} Reprendre un menu</button>
       </div>
+      ${dayTotals.length ? this._tplWeekNutrition(dayTotals) : ""}
       ${w.entries.length ? `<p class="drag-hint">✋ Maintenez un repas puis glissez-le vers un autre jour pour le déplacer.</p>` : ""}
       ${days.join("")}
       <button class="btn big block" data-action="shop-preview" ${w.entries.length ? "" : "disabled"}>${icon("cart-outline")} Liste de courses de la semaine${pending ? ` (${pending} repas)` : ""}</button>`;
+  }
+
+  /* Total d'une journée pour une personne : somme des portions des repas prévus. */
+  _dayNutrition(date) {
+    const meals = this.s.week.entries.filter((e) => e.date === date);
+    let found = false;
+    const t = { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+    for (const e of meals) {
+      const n = (this._recipe(e.recipe_id) || {}).nutrition;
+      if (!n || !n.kcal) continue;
+      found = true;
+      for (const k of Object.keys(t)) t[k] += n[k] || 0;
+    }
+    if (!found) return null;
+    t.kcal = Math.round(t.kcal);
+    for (const k of ["protein", "carbs", "fat", "fiber"]) t[k] = Math.round(t[k]);
+    t.meals = meals.length;
+    return t;
+  }
+
+  _tplWeekNutrition(days) {
+    const avg = (k) => Math.round(days.reduce((s, d) => s + d[k], 0) / days.length);
+    const energy = avg("protein") * 4 + avg("carbs") * 4 + avg("fat") * 9 || 1;
+    const parts = [["protein", "prot."], ["carbs", "gluc."], ["fat", "lip."]];
+    const k = { protein: 4, carbs: 4, fat: 9 };
+    return `<div class="card week-nut">
+      <div class="row" style="gap:10px">${bubble("nutrition", COLORS.green)}
+        <div class="grow"><b>Moyenne par personne</b><div class="muted small">sur ${days.length} jour${days.length > 1 ? "s" : ""} planifié${days.length > 1 ? "s" : ""} (repas prévus seulement)</div></div>
+        <div class="nut-kcal sm"><b>${avg("kcal")}</b> kcal/j</div>
+      </div>
+      <div class="nut-bar">${parts.map(([key]) => `<i style="width:${Math.round((avg(key) * k[key] * 100) / energy)}%;background:${NUT_COLORS[key]}"></i>`).join("")}</div>
+      <div class="muted small">${parts.map(([key, label]) => `<span class="dot" style="background:${NUT_COLORS[key]}"></span> ${avg(key)} g ${label}`).join(" &nbsp; ")} &nbsp; <span class="dot" style="background:${NUT_COLORS.fiber}"></span> ${avg("fiber")} g fibres</div>
+    </div>`;
   }
 
   _tplSlot(date, slot) {
@@ -4466,6 +4593,7 @@ class FrigoMalinPanel extends HTMLElement {
       <div class="meta">
         ${r.prep_time ? `<span><span class="ico" style="--c:${COLORS.green}">${icon("knife")}</span> Préparation ${fmtMinutes(r.prep_time)}</span>` : ""}
         ${r.cook_time ? `<span><span class="ico" style="--c:${COLORS.red}">${icon("stove")}</span> Cuisson ${fmtMinutes(r.cook_time)}</span>` : ""}
+        ${r.nutrition && r.nutrition.kcal ? `<span><span class="ico" style="--c:${COLORS.orange}">${icon("fire")}</span> ${r.nutrition.kcal} kcal / pers.</span>` : ""}
       </div>
       ${r.tags && r.tags.length ? `<div class="chips" style="margin-bottom:8px">${r.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
       ${!saved && r.missing && r.missing.length ? `<div class="info"><b>À acheter :</b> ${esc(r.missing.join(", "))}</div>` : ""}
@@ -4485,6 +4613,8 @@ class FrigoMalinPanel extends HTMLElement {
           })
           .join("")}
       </ul>
+
+      ${this._tplNutrition(r)}
 
       <div class="sec">${bubble("chef-hat", COLORS.orange)}<h3>Préparation</h3></div>
       <ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>

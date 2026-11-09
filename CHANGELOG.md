@@ -7,6 +7,17 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.11.0] – 2026-11-09
+
+### Ajouté
+
+- 🥗 **Macronutriments des recettes** : calories, protéines, glucides, lipides et fibres **par portion**, calculés d'après les ingrédients et leurs quantités.
+  - Une table intégrée d'environ 250 aliments courants (valeurs moyennes, type table Ciqual) fait le calcul instantanément et gratuitement. Elle convertit les quantités en grammes : cuillères, gousses, boîtes, tranches, pièces…
+  - Les aliments absents de la table sont estimés **une seule fois** par l'IA (modèle léger), puis gardés en mémoire.
+  - **Fiche recette** : le total en kcal par personne en haut, et un bloc détaillé avec la répartition protéines / glucides / lipides et les fibres.
+  - **Semaine** : le total de chaque jour par personne et une moyenne de la semaine.
+  - **Accueil, carnet, bibliothèque et idées du frigo** : un badge « 🔥 kcal · 💪 protéines ».
+
 ## [1.10.0] – 2026-11-09
 
 ### Ajouté

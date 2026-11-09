@@ -40,6 +40,7 @@ from .todo import OWN_LIST_ENTITY
 from .importer import RecipeImportError, async_import_recipe
 from .household import household_context, household_servings
 from .library import THEMES, TYPES, load_library
+from .nutrition import clean_food, compute, food_key, unknown_names, with_nutrition
 from .parsing import (
     aggregate_shopping,
     merge_into_list,
@@ -214,6 +215,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_plan_apply,
         ws_library_list,
         ws_library_ideas,
+        ws_nutrition_complete,
         ws_timer_start,
         ws_timer_cancel,
         ws_fridge_memory,
@@ -256,8 +258,9 @@ def ws_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, m
 @websocket_api.websocket_command({vol.Required("type"): "frigo_malin/recipes/list"})
 @callback
 def ws_recipes_list(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    recipes = sorted(_data(hass).store.recipes.values(), key=lambda r: r["title"].lower())
-    connection.send_result(msg["id"], {"recipes": recipes})
+    data = _data(hass)
+    recipes = sorted(data.store.recipes.values(), key=lambda r: r["title"].lower())
+    connection.send_result(msg["id"], {"recipes": [with_nutrition(r, data.store.foods) for r in recipes]})
 
 
 @websocket_api.websocket_command(
@@ -271,7 +274,7 @@ def ws_recipes_save(hass: HomeAssistant, connection: websocket_api.ActiveConnect
     except ValueError as err:
         _error(connection, msg["id"], err)
         return
-    connection.send_result(msg["id"], {"recipe": recipe})
+    connection.send_result(msg["id"], {"recipe": with_nutrition(recipe, data.store.foods)})
 
 
 @websocket_api.websocket_command(
@@ -289,7 +292,7 @@ def ws_recipes_patch(hass: HomeAssistant, connection: websocket_api.ActiveConnec
         connection.send_error(msg["id"], "not_found", "Recette introuvable")
         return
     recipe = store.patch_recipe(msg["recipe_id"], favorite=msg.get("favorite"), notes=msg.get("notes"))
-    connection.send_result(msg["id"], {"recipe": recipe})
+    connection.send_result(msg["id"], {"recipe": with_nutrition(recipe, store.foods)})
 
 
 @websocket_api.websocket_command(
@@ -314,7 +317,7 @@ async def ws_recipes_import(
     except RecipeImportError as err:
         _error(connection, msg["id"], err)
         return
-    connection.send_result(msg["id"], {"recipe": recipe})
+    connection.send_result(msg["id"], {"recipe": with_nutrition(recipe, data.store.foods)})
 
 
 # ---------------------------------------------------------------------- frigo
@@ -384,7 +387,7 @@ async def ws_fridge_suggest(
     except AIError as err:
         _error(connection, msg["id"], err)
         return
-    connection.send_result(msg["id"], {"recipes": recipes})
+    connection.send_result(msg["id"], {"recipes": [with_nutrition(r, data.store.foods) for r in recipes]})
 
 
 # ---------------------------------------------------------------- frigo mémorisé
@@ -743,7 +746,7 @@ async def ws_recipes_from_photo(
         _error(connection, msg["id"], err)
         return
     recipe["origin"] = "photo"
-    connection.send_result(msg["id"], {"recipe": recipe})
+    connection.send_result(msg["id"], {"recipe": with_nutrition(recipe, _data(hass).store.foods)})
 
 
 # ---------------------------------------------------------------------- planifier la semaine
@@ -900,7 +903,8 @@ async def _library(hass: HomeAssistant) -> list[dict[str, Any]]:
 @websocket_api.async_response
 async def ws_library_list(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     recipes = await _library(hass)
-    connection.send_result(msg["id"], {"recipes": recipes, "themes": THEMES, "types": TYPES})
+    foods = _data(hass).store.foods
+    connection.send_result(msg["id"], {"recipes": [with_nutrition(r, foods) for r in recipes], "themes": THEMES, "types": TYPES})
 
 
 @websocket_api.websocket_command(
@@ -934,7 +938,49 @@ async def ws_library_ideas(hass: HomeAssistant, connection: websocket_api.Active
         recipe["benefits"] = recipe.pop("tags", [])[:4]
         recipe["tags"] = [THEMES[msg["theme"]]] if msg["theme"] else []
         recipe["origin"] = "ai"
-    connection.send_result(msg["id"], {"recipes": recipes})
+    connection.send_result(msg["id"], {"recipes": [with_nutrition(r, data.store.foods) for r in recipes]})
+
+
+# ---------------------------------------------------------------- valeurs nutritionnelles
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "frigo_malin/nutrition/complete",
+        vol.Optional("names", default=[]): [str],
+        vol.Optional("ingredients"): list,
+        vol.Optional("servings"): vol.Any(None, int),
+    }
+)
+@websocket_api.async_response
+async def ws_nutrition_complete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Demande une seule fois à l'IA les aliments absents de la table, puis recalcule.
+
+    `names` : aliments à compléter (ex. tous ceux du carnet) ; `ingredients` + `servings` :
+    une recette dont on veut les valeurs à jour (fiche ouverte, idée non enregistrée).
+    """
+    data = _data(hass)
+    store = data.store
+    ingredients = [i for i in msg.get("ingredients") or [] if isinstance(i, dict)]
+    names = list(msg["names"]) + unknown_names([{"ingredients": ingredients}], store.foods)
+    missing = [n for n in dict.fromkeys(names) if n.strip() and food_key(n) not in store.foods][:40]
+    added = 0
+    if missing:
+        try:
+            found = await data.ai.estimate_foods(missing)
+        except AIError as err:
+            _error(connection, msg["id"], err)
+            return
+        by_key = {food_key(name): clean_food(raw) for name, raw in found.items()}
+        # Ce que l'IA n'a pas su estimer n'est plus redemandé.
+        foods = {food_key(n): by_key.get(food_key(n), {"skip": True}) for n in missing}
+        foods.update({k: v for k, v in by_key.items() if k not in foods})
+        store.save_foods(foods)
+        added = sum(1 for f in foods.values() if not f.get("skip"))
+    result: dict[str, Any] = {"added": added}
+    if ingredients:
+        result["nutrition"] = compute(ingredients, msg.get("servings"), store.foods)
+    connection.send_result(msg["id"], result)
 
 
 # ---------------------------------------------------------------- minuteurs du mode cuisine
