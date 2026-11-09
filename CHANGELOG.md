@@ -7,6 +7,21 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.16.0] – 2026-11-09
+
+### Modifié
+
+- 🖼️ **Recettes avec en-tête photo** :
+  - la photo de la recette occupe le haut de l'écran, avec un dégradé ;
+  - le titre et la description s'affichent par-dessus ;
+  - sans photo, un dégradé coloré avec l'emoji du plat.
+- **Éditeur de recette** :
+  - le titre et la description se modifient directement sur la photo ;
+  - un bouton 🖼️ mène au champ de la photo, qui met l'en-tête à jour en direct ;
+  - portions, préparation et cuisson s'affichent en trois cases ;
+  - « Importée de Jow · à vérifier » apparaît en pastille sur la photo.
+- **Fiche recette** : même en-tête, avec une pastille « Jow » pour les recettes venues de Jow.
+
 ## [1.15.1] – 2026-11-09
 
 ### Modifié

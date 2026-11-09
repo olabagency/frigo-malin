@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.15.1";
+const FM_VERSION = "1.16.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -895,6 +895,25 @@ select.keep.danger { border-color: var(--fm-error); color: var(--fm-error); font
 }
 .sheet .footer .inner { display: flex; gap: 8px; width: 100%; max-width: 728px; }
 
+/* En-tête photo des recettes */
+.hero { position: relative; margin: -16px -16px 14px; min-height: 250px; display: flex; align-items: flex-end; background-color: #444; background-size: cover; background-position: center; color: #fff; overflow: hidden; }
+.hero::before { content: var(--hero-emoji, ""); position: absolute; top: 14px; left: 18px; font-size: 64px; opacity: .95; transform: rotate(-8deg); }
+.hero-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 25%, rgba(0,0,0,.35) 55%, rgba(0,0,0,.82) 100%); }
+.hero-text { position: relative; width: 100%; padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 6px; }
+.hero-badge { align-self: flex-start; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 12px; background: rgba(255,255,255,.22); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.hero-title { margin: 0; font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -.01em; color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,.35); }
+.hero-desc { margin: 0; font-size: 15px; color: rgba(255,255,255,.88); text-shadow: 0 1px 6px rgba(0,0,0,.35); }
+.hero.edit textarea.hero-title, .hero.edit input.hero-desc { font-family: inherit; background: transparent; border: 0; border-bottom: 1px dashed rgba(255,255,255,.45); border-radius: 0; padding: 2px 0 4px; outline: none; width: 100%; resize: none; }
+.hero.edit textarea.hero-title { overflow: hidden; }
+.hero.edit textarea.hero-title:focus, .hero.edit input.hero-desc:focus { border-bottom: 2px solid #fff; }
+.hero.edit ::placeholder { color: rgba(255,255,255,.6); }
+.hero-photo { position: absolute; top: 12px; right: 12px; z-index: 1; width: 40px; height: 40px; border-radius: 50%; border: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.35); color: #fff; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: pointer; }
+.hero-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+.hero-stats label { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 14px; background: var(--fm-card); border: 1px solid var(--fm-divider); font-size: 12px; color: var(--fm-text2); position: relative; }
+.hero-stats input { border: 0; background: transparent; font: inherit; font-size: 20px; font-weight: 600; color: var(--fm-text); width: 100%; padding: 0; outline: none; }
+.hero-stats em { position: absolute; right: 12px; bottom: 11px; font-style: normal; font-size: 12px; }
+@media (min-width: 792px) { .hero { margin: 0 0 14px; border-radius: var(--fm-radius); } }
+
 .cover { width: 100%; max-height: 280px; object-fit: cover; border-radius: var(--fm-radius); display: block; margin-bottom: 12px; }
 .meta { display: flex; flex-wrap: wrap; gap: 16px; color: var(--fm-text2); font-size: 14px; margin: 10px 0; }
 .meta span { display: inline-flex; align-items: center; gap: 4px; }
@@ -1332,6 +1351,17 @@ class FrigoMalinPanel extends HTMLElement {
     }
     if (path.startsWith("fridge.ingredients.")) this._syncFridgeMemory();
     if (path.startsWith("top.draft.")) this._settingsDirtyCheck();
+    if (el.dataset.heroTitle !== undefined) {
+      if (/\n/.test(el.value)) {
+        el.value = el.value.replace(/\s*\n\s*/g, " ");
+        this._setPath(path, el.value);
+      }
+      this._fitTitle(el);
+    }
+    if (path === "top.draft.image" || path === "top.draft.title") {
+      const hero = this.shadowRoot.getElementById("editor-hero");
+      if (hero && this.top && this.top.draft) hero.setAttribute("style", this._heroBg(this.top.draft));
+    }
   }
 
   async _onChange(ev) {
@@ -1700,6 +1730,12 @@ class FrigoMalinPanel extends HTMLElement {
       case "home-quick":
         this._setHomeQuick(!s.home.quick);
         return;
+      case "editor-image": {
+        const input = this.shadowRoot.getElementById("editor-image");
+        input?.scrollIntoView({ behavior: "smooth", block: "center" });
+        input?.focus({ preventScroll: true });
+        return;
+      }
       case "home-jow":
         this._dispatch("tab", { dataset: { tab: "recipes" } });
         this._dispatch("import-open", { dataset: {} });
@@ -3441,6 +3477,13 @@ class FrigoMalinPanel extends HTMLElement {
     if (body && key === prevKey) body.scrollTop = scroll;
     // Retour sur une fenêtre quittée plus tôt (ex. la recherche Jow) : même position qu'avant.
     else if (body && top && top.scroll != null) body.scrollTop = top.scroll;
+    host.querySelectorAll("textarea.hero-title").forEach((t) => this._fitTitle(t));
+  }
+
+  /* Le titre sur la photo prend juste la hauteur de son texte (1, 2 ou 3 lignes). */
+  _fitTitle(el) {
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
   }
 
   _renderToast() {
@@ -4643,9 +4686,14 @@ class FrigoMalinPanel extends HTMLElement {
       ? `<button class="icon-btn" data-action="favorite" aria-label="Favori">${icon(r.favorite ? "star" : "star-outline")}</button>`
       : "";
     const body = `
-      ${img ? `<img class="cover" src="${esc(img)}" alt="" referrerpolicy="no-referrer">` : ""}
-      <h2>${esc(r.title)}</h2>
-      ${r.description ? `<p class="muted" style="margin:6px 0">${esc(r.description)}</p>` : ""}
+      <div class="hero" style="${this._heroBg(r)}">
+        <div class="hero-shade"></div>
+        <div class="hero-text">
+          ${r.origin === "jow" ? `<span class="hero-badge">🥘 Jow</span>` : ""}
+          <h1 class="hero-title">${esc(r.title)}</h1>
+          ${r.description ? `<p class="hero-desc">${esc(r.description)}</p>` : ""}
+        </div>
+      </div>
       <div class="meta">
         ${r.prep_time ? `<span><span class="ico" style="--c:${COLORS.green}">${icon("knife")}</span> Préparation ${fmtMinutes(r.prep_time)}</span>` : ""}
         ${r.cook_time ? `<span><span class="ico" style="--c:${COLORS.red}">${icon("stove")}</span> Cuisson ${fmtMinutes(r.cook_time)}</span>` : ""}
@@ -4796,21 +4844,37 @@ class FrigoMalinPanel extends HTMLElement {
     </div>`;
   }
 
+  /* Fond de l'en-tête : la photo de la recette, sinon un dégradé à sa couleur avec son emoji. */
+  _heroBg(r) {
+    const img = safeUrl(r.image);
+    if (img) return `background-image:url('${esc(img).replace(/'/g, "%27")}')`;
+    const hue = hashHue(r.title || "recette");
+    return `background-image:linear-gradient(135deg,hsl(${hue} 65% 52%),hsl(${(hue + 40) % 360} 70% 38%));--hero-emoji:'${emojiFor(r.title || "")}'`;
+  }
+
   _tplEditor(top) {
     const d = top.draft;
+    const badge =
+      top.imported === "photo" ? "📖 Lue sur la photo · relisez les quantités" : d.origin === "jow" && top.imported ? "🥘 Importée de Jow · à vérifier" : top.imported ? "🔗 Importée · à vérifier" : "";
     const body = `
-      ${top.imported === "photo" ? `<div class="info">📖 Recette lue sur la photo. Relisez-la (surtout les quantités), puis enregistrez.</div>` : top.imported ? `<div class="info">Recette importée. Vérifiez-la, puis enregistrez.</div>` : ""}
-      <label class="field"><span>Nom de la recette *</span><input class="input" value="${esc(d.title)}" data-model="top.draft.title" placeholder="Gratin dauphinois"></label>
-      <label class="field"><span>Description</span><input class="input" value="${esc(d.description)}" data-model="top.draft.description"></label>
-      <div class="row">
-        <label class="field grow"><span>Portions</span><input class="input" type="number" min="1" inputmode="numeric" value="${esc(d.servings)}" data-model="top.draft.servings"></label>
-        <label class="field grow"><span>Préparation (min)</span><input class="input" type="number" min="0" inputmode="numeric" value="${esc(d.prep_time)}" data-model="top.draft.prep_time"></label>
-        <label class="field grow"><span>Cuisson (min)</span><input class="input" type="number" min="0" inputmode="numeric" value="${esc(d.cook_time)}" data-model="top.draft.cook_time"></label>
+      <div class="hero edit" id="editor-hero" style="${this._heroBg(d)}">
+        <div class="hero-shade"></div>
+        <button class="hero-photo" data-action="editor-image" aria-label="Changer la photo">${icon("image-edit-outline")}</button>
+        <div class="hero-text">
+          ${badge ? `<span class="hero-badge">${badge}</span>` : ""}
+          <textarea class="hero-title" rows="1" data-model="top.draft.title" data-hero-title placeholder="Nom de la recette" aria-label="Nom de la recette">${esc(d.title)}</textarea>
+          <input class="hero-desc" value="${esc(d.description)}" data-model="top.draft.description" placeholder="Une phrase qui donne envie…" aria-label="Description">
+        </div>
+      </div>
+      <div class="hero-stats">
+        <label><span>👥 Portions</span><input type="number" min="1" inputmode="numeric" value="${esc(d.servings)}" data-model="top.draft.servings"></label>
+        <label><span>🔪 Prépa</span><input type="number" min="0" inputmode="numeric" value="${esc(d.prep_time)}" data-model="top.draft.prep_time" placeholder="–"><em>min</em></label>
+        <label><span>🔥 Cuisson</span><input type="number" min="0" inputmode="numeric" value="${esc(d.cook_time)}" data-model="top.draft.cook_time" placeholder="–"><em>min</em></label>
       </div>
       <label class="field"><span>Ingrédients — un par ligne (ex. : 200 g de farine)</span><textarea class="input" rows="8" data-model="top.draft.ingredients">${esc(d.ingredients)}</textarea></label>
       <label class="field"><span>Étapes — une par ligne</span><textarea class="input" rows="10" data-model="top.draft.steps">${esc(d.steps)}</textarea></label>
       <label class="field"><span>Mots-clés, séparés par des virgules</span><input class="input" value="${esc(d.tags)}" data-model="top.draft.tags" placeholder="plat, végétarien, rapide"></label>
-      <label class="field"><span>Adresse d'une photo (facultatif)</span><input class="input" type="url" value="${esc(d.image)}" data-model="top.draft.image"></label>
+      <label class="field"><span>Adresse d'une photo (facultatif)</span><input class="input" id="editor-image" type="url" value="${esc(d.image)}" data-model="top.draft.image" placeholder="https://…"></label>
       <label class="field"><span>Source (facultatif)</span><input class="input" type="url" value="${esc(d.source_url)}" data-model="top.draft.source_url"></label>`;
     const footer = `<button class="btn grow big" data-action="save-editor">${icon("content-save-outline")} Enregistrer</button>`;
     return this._tplSheet(d.id ? "Modifier la recette" : "Nouvelle recette", body, footer);
