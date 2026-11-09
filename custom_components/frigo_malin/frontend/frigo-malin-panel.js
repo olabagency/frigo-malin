@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.12.0";
+const FM_VERSION = "1.13.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -357,6 +357,12 @@ function fridgeSections(items) {
 
 const KEEP_OPTIONS = [["", "—"], [0, "Aujourd'hui"], [1, "1 jour"], [2, "2 jours"], [3, "3 jours"], [5, "5 jours"], [7, "1 semaine"], [14, "2 semaines"], [30, "1 mois"]];
 
+const TAG_EMOJI = {
+  "Plat principal": "🍽️", "Entrée": "🥗", "Dessert": "🍰", "Apéritif": "🥂", "Petit-déjeuner": "🥐", "Goûter": "🍪",
+  Accompagnement: "🥔", Soupe: "🍲", Salade: "🥬", Sauce: "🫙", Boisson: "🥤", "Végétarien": "🌱", Vegan: "🌿",
+  Rapide: "⚡", "Sans gluten": "🌾", "Léger": "🪶",
+};
+
 /* Macronutriments par portion (calculés par le serveur). */
 const NUT_COLORS = { protein: "#e53935", carbs: "#f9a825", fat: "#1e88e5", fiber: "#43a047" };
 function nutBadge(r) {
@@ -669,6 +675,11 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .toast { display: flex; align-items: center; gap: 10px; }
 .toast ha-icon { --mdc-icon-size: 20px; flex-shrink: 0; }
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
+
+/* Jow */
+.jow-card .m { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.jow-card > ha-icon { color: var(--fm-primary); }
+.chips.filters .chip { min-height: 34px; }
 
 /* Valeurs nutritionnelles */
 .nut { padding: 14px 16px; }
@@ -1322,6 +1333,10 @@ class FrigoMalinPanel extends HTMLElement {
     this._setPath(path, value);
     if (el.dataset.live === "recipes") this._renderRecipeList();
     if (el.dataset.live === "pick") this._renderPickList();
+    if (el.dataset.live === "jow") {
+      clearTimeout(this._jowTimer);
+      this._jowTimer = setTimeout(() => this._jowSearch(), 300);
+    }
     if (path.startsWith("fridge.ingredients.")) this._syncFridgeMemory();
     if (path.startsWith("top.draft.")) this._settingsDirtyCheck();
     if (el.dataset.live === "library") {
@@ -2093,9 +2108,21 @@ class FrigoMalinPanel extends HTMLElement {
         this._renderOverlay();
         return;
       case "import-open":
-        s.stack.push({ type: "import", url: "", loading: false, error: null });
+        s.stack.push({ type: "import", mode: "jow", url: "", loading: false, error: null, jowQuery: "", jow: null, jowLoading: false });
         this._renderOverlay();
-        this.shadowRoot.getElementById("import-url")?.focus();
+        this._jowSearch();
+        return;
+      case "import-mode":
+        this.top.mode = d.value;
+        this.top.error = null;
+        this._renderOverlay();
+        if (d.value === "url") this.shadowRoot.getElementById("import-url")?.focus();
+        else if (!this.top.jow) this._jowSearch();
+        return;
+      case "jow-import":
+        this.top.url = d.url;
+        this.top.importing = d.url;
+        this._import();
         return;
       case "import":
         this._import();
@@ -2628,6 +2655,7 @@ class FrigoMalinPanel extends HTMLElement {
       steps: (r.steps || []).join("\n"),
       source_url: r.source_url || "",
       origin: r.origin || "manual",
+      notes: r.notes || "",
     };
   }
 
@@ -2700,6 +2728,46 @@ class FrigoMalinPanel extends HTMLElement {
     }
   }
 
+  async _jowSearch() {
+    const top = this.top;
+    if (!top || top.type !== "import") return;
+    const query = top.jowQuery || "";
+    top.jowLoading = true;
+    this._renderJowResults();
+    try {
+      const res = await this._ws("jow/search", { query });
+      if (this.top !== top || top.jowQuery !== query) return;
+      top.jow = res;
+      top.error = null;
+    } catch (err) {
+      top.error = this._err(err);
+    }
+    top.jowLoading = false;
+    this._renderJowResults();
+  }
+
+  _renderJowResults() {
+    const el = this.shadowRoot.getElementById("jow-results");
+    if (el && this.top && this.top.type === "import") el.innerHTML = this._tplJowResults(this.top);
+  }
+
+  _tplJowResults(top) {
+    if (top.error) return `<div class="alert">${esc(top.error)}</div>`;
+    if (!top.jow) return `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`;
+    const list = top.jow.recipes;
+    if (!list.length) return `<div class="empty"><div class="emoji">🔍</div><p>Aucune recette Jow ne correspond.</p></div>`;
+    return `${top.jowQuery ? "" : `<p class="muted small" style="margin:0 0 8px">${top.jow.total} recettes Jow. Cherchez un plat ou un ingrédient.</p>`}
+      ${list
+        .map(
+          (r) => `<button class="lib-card jow-card" data-action="jow-import" data-url="${esc(r.url)}" ${top.loading ? "disabled" : ""}>
+            ${safeUrl(r.image) ? `<img class="thumb" src="${esc(safeUrl(r.image))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="thumb">${emojiFor(r.title)}</div>`}
+            <div class="grow"><div class="t">${esc(r.title)}</div><div class="m">${esc(r.description)}</div></div>
+            ${top.loading && top.importing === r.url ? `<span class="spinner sm"></span>` : icon("download")}
+          </button>`
+        )
+        .join("")}`;
+  }
+
   async _import() {
     const top = this.top;
     if (!String(top.url).trim()) return;
@@ -2713,6 +2781,11 @@ class FrigoMalinPanel extends HTMLElement {
     } catch (err) {
       top.loading = false;
       top.error = this._err(err);
+      // Depuis la liste Jow : on garde la liste et on montre l'erreur en bas.
+      if (top.mode === "jow") {
+        this._toast(top.error, true);
+        top.error = null;
+      }
     }
     this._renderOverlay();
   }
@@ -4442,22 +4515,23 @@ class FrigoMalinPanel extends HTMLElement {
   _tplMyRecipes() {
     const tagCount = {};
     for (const r of this.s.recipes) for (const t of r.tags || []) tagCount[t] = (tagCount[t] || 0) + 1;
-    const tags = Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
+    // Quelques catégories seulement : les plus fréquentes, sur une seule ligne qui défile.
+    const tags = Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([t]) => t);
     const f = this.s.filter;
     return `
       <div class="row" style="margin-bottom:12px">
         <button class="btn grow" data-action="new-recipe">${icon("plus")} Nouvelle</button>
-        <button class="btn tonal grow" data-action="import-open">${icon("link-variant")} Lien</button>
+        <button class="btn tonal grow" data-action="import-open">${icon("download")} Importer</button>
         <button class="btn tonal grow" data-action="book-open">${icon("book-open-variant")} Photo</button>
       </div>
       <div class="search">
         ${icon("magnify")}
         <input class="input" type="search" placeholder="Chercher une recette, un ingrédient…" value="${esc(this.s.search)}" data-model="search" data-live="recipes">
       </div>
-      <div class="chips" style="margin-bottom:14px">
-        <button class="chip ${f === "all" ? "on" : ""}" data-action="filter" data-value="all">${icon("bookshelf")} Toutes</button>
-        <button class="chip ${f === "fav" ? "on" : ""}" data-action="filter" data-value="fav">${icon("star")} Favoris</button>
-        ${tags.map((t) => `<button class="chip ${f === "tag:" + t ? "on" : ""}" data-action="filter" data-value="tag:${esc(t)}">${icon("tag-outline")} ${esc(t)}</button>`).join("")}
+      <div class="chips scroll filters" style="margin-bottom:14px">
+        <button class="chip ${f === "all" ? "on" : ""}" data-action="filter" data-value="all">Toutes</button>
+        <button class="chip ${f === "fav" ? "on" : ""}" data-action="filter" data-value="fav">⭐ Favoris</button>
+        ${tags.map((t) => `<button class="chip ${f === "tag:" + t ? "on" : ""}" data-action="filter" data-value="tag:${esc(t)}">${TAG_EMOJI[t] ? TAG_EMOJI[t] + " " : ""}${esc(t)}</button>`).join("")}
       </div>
       <div id="recipe-list">${this._tplRecipeItems()}</div>
       ${this._tplVersion()}`;
@@ -4824,8 +4898,22 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   _tplImport(top) {
-    const body = `
-      <p class="muted">Collez l'adresse d'une recette (Marmiton, 750g, Cuisine AZ, un blog…). Je récupère les ingrédients et les étapes.</p>
+    const tabs = `<div class="segmented" style="margin-bottom:14px">
+        <button class="${top.mode === "jow" ? "on" : ""}" data-action="import-mode" data-value="jow">🥘 Jow</button>
+        <button class="${top.mode === "url" ? "on" : ""}" data-action="import-mode" data-value="url">🔗 Un lien</button>
+      </div>`;
+    if (top.mode === "jow") {
+      const jowBody = `${tabs}
+        <div class="search">
+          ${icon("magnify")}
+          <input class="input" type="search" id="jow-query" placeholder="Chercher sur Jow (ex. : poulet curry, lasagnes…)" value="${esc(top.jowQuery)}" data-model="top.jowQuery" data-live="jow" enterkeyhint="search" autocomplete="off">
+        </div>
+        <p class="muted small" style="margin:-4px 0 10px">Les quantités sont adaptées à votre foyer (${this.defaultServings} pers.) et vous relisez la recette avant de l'enregistrer.</p>
+        <div id="jow-results">${this._tplJowResults(top)}</div>`;
+      return this._tplSheet("Importer une recette", jowBody);
+    }
+    const body = `${tabs}
+      <p class="muted">Collez l'adresse d'une recette (Jow, Marmiton, 750g, Cuisine AZ, un blog…). Je récupère les ingrédients et les étapes.</p>
       ${top.error ? `<div class="alert">${esc(top.error)}</div>` : ""}
       <label class="field"><span>Adresse de la recette</span>
         <input class="input" id="import-url" type="url" inputmode="url" placeholder="https://www.marmiton.org/recettes/…" value="${esc(top.url)}" data-model="top.url" data-enter="import" ${top.loading ? "disabled" : ""}>

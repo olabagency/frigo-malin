@@ -37,7 +37,9 @@ from .const import (
 from .drive import CONNECTORS
 from .timers import async_cancel_timer, async_start_timer
 from .todo import OWN_LIST_ENTITY
-from .importer import RecipeImportError, async_import_recipe
+from .importer import RecipeImportError, async_fetch_text, async_import_recipe
+from .jow import SITEMAP_URL, JowCatalog
+from .jow import search as jow_search
 from .household import household_context, household_servings
 from .library import THEMES, TYPES, load_library
 from .nutrition import clean_food, compute, food_key, unknown_names, with_nutrition
@@ -216,6 +218,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_library_list,
         ws_library_ideas,
         ws_nutrition_complete,
+        ws_jow_search,
         ws_timer_start,
         ws_timer_cancel,
         ws_fridge_memory,
@@ -313,7 +316,7 @@ async def ws_recipes_import(
 ) -> None:
     data = _data(hass)
     try:
-        recipe = await async_import_recipe(async_get_clientsession(hass), data.ai, msg["url"])
+        recipe = await async_import_recipe(async_get_clientsession(hass), data.ai, msg["url"], _servings_default(data))
     except RecipeImportError as err:
         _error(connection, msg["id"], err)
         return
@@ -939,6 +942,27 @@ async def ws_library_ideas(hass: HomeAssistant, connection: websocket_api.Active
         recipe["tags"] = [THEMES[msg["theme"]]] if msg["theme"] else []
         recipe["origin"] = "ai"
     connection.send_result(msg["id"], {"recipes": [with_nutrition(r, data.store.foods) for r in recipes]})
+
+
+# ---------------------------------------------------------------- Jow
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "frigo_malin/jow/search", vol.Optional("query", default=""): str}
+)
+@websocket_api.async_response
+async def ws_jow_search(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Cherche dans le catalogue Jow (plan du site, gardé une journée)."""
+    catalog: JowCatalog = hass.data.setdefault(f"{DOMAIN}_jow", JowCatalog())
+    if not catalog.fresh:
+        try:
+            page, _url = await async_fetch_text(async_get_clientsession(hass), SITEMAP_URL)
+            catalog.load(page)
+        except RecipeImportError:
+            if not catalog.recipes:
+                connection.send_error(msg["id"], "unavailable", "Jow ne répond pas pour le moment. Réessayez plus tard.")
+                return
+    connection.send_result(msg["id"], {"recipes": jow_search(catalog.recipes, msg["query"]), "total": len(catalog.recipes)})
 
 
 # ---------------------------------------------------------------- valeurs nutritionnelles

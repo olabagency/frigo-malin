@@ -7,6 +7,23 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.13.0] – 2026-11-09
+
+### Ajouté
+
+- 🥘 **Recettes Jow** : Recettes → **Importer** → onglet **Jow**.
+  - On cherche parmi les quelque 3 700 recettes de jow.fr (par plat ou ingrédient), avec photo et description, puis on importe d'un appui.
+  - Les quantités sont reprises exactement (Jow les donne par personne) et adaptées au nombre de personnes du foyer.
+  - Les étapes et l'astuce du chef sont reprises (l'astuce dans les notes), et vous relisez la recette avant de l'enregistrer.
+  - Un lien Jow collé dans l'onglet « Un lien » passe par le même import.
+
+### Modifié
+
+- **Mots-clés épurés** :
+  - les recettes ne gardent que quelques catégories utiles (Plat principal, Dessert, Végétarien, Rapide…), au plus 4 ;
+  - les noms d'ingrédients, les morceaux du titre et les phrases trop longues renvoyées par certains sites sont retirés, y compris dans les recettes déjà enregistrées ;
+  - dans le carnet, les filtres tiennent sur une seule ligne qui défile.
+
 ## [1.12.0] – 2026-11-09
 
 ### Modifié

@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 from .ai import AIClient, AIError
+from .jow import is_jow_url, parse_recipe_page
 from .parsing import count_ldjson, extract_recipe_from_html, extract_recipe_from_microdata, html_to_text
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,12 +30,8 @@ class RecipeImportError(Exception):
     """Erreur d'import lisible."""
 
 
-async def async_import_recipe(session: aiohttp.ClientSession, ai: AIClient, url: str) -> dict[str, Any]:
-    url = url.strip()
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        raise RecipeImportError("Adresse invalide : elle doit commencer par https://")
-
+async def async_fetch_text(session: aiohttp.ClientSession, url: str) -> tuple[str, str]:
+    """Contenu complet d'une page (texte, adresse finale)."""
     try:
         async with session.get(
             url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=30), allow_redirects=True
@@ -51,9 +48,26 @@ async def async_import_recipe(session: aiohttp.ClientSession, ai: AIClient, url:
                 if size >= MAX_PAGE_SIZE:
                     break
             page = b"".join(chunks).decode(resp.charset or "utf-8", errors="replace")
-            final_url = str(resp.url)
+            return page, str(resp.url)
     except (aiohttp.ClientError, asyncio.TimeoutError) as err:
         raise RecipeImportError("Impossible d'ouvrir cette page.") from err
+
+
+async def async_import_recipe(
+    session: aiohttp.ClientSession, ai: AIClient, url: str, servings: int = 4
+) -> dict[str, Any]:
+    url = url.strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise RecipeImportError("Adresse invalide : elle doit commencer par https://")
+
+    page, final_url = await async_fetch_text(session, url)
+
+    # Jow : quantités par personne et unités exactes, mises à l'échelle du foyer.
+    if is_jow_url(final_url):
+        recipe = parse_recipe_page(page, final_url, servings)
+        if recipe and recipe["ingredients"]:
+            return recipe
 
     recipe = extract_recipe_from_html(page, final_url)
     if not (recipe and recipe["ingredients"]):

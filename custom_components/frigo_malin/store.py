@@ -13,7 +13,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_SERVINGS, SLOTS, STORAGE_KEY, STORAGE_MINOR_VERSION, STORAGE_VERSION
 from .household import normalize_settings
-from .parsing import normalize_ingredient, shopping_key
+from .parsing import clean_tags, normalize_ingredient, shopping_key
 
 
 def _int(value: Any, default: int | None = None) -> int | None:
@@ -46,6 +46,10 @@ class _MigratingStore(Store[dict[str, Any]]):
         if old_major_version == 1 and old_minor_version < 4:
             # 1.4.0 : liste de courses intégrée.
             data.setdefault("shopping_items", [])
+        if old_major_version == 1 and old_minor_version < 5:
+            # 1.13.0 : mots-clés épurés (plus de noms d'ingrédients ni de bouts de titre).
+            for recipe in data.get("recipes", []):
+                recipe["tags"] = clean_tags(recipe.get("tags") or [], recipe.get("title", ""), recipe.get("ingredients") or [])
         if old_major_version > STORAGE_VERSION:
             raise NotImplementedError("Données créées par une version plus récente de Frigo Malin")
         return data
@@ -250,7 +254,7 @@ class FrigoStore:
             "cook_time": _int(raw.get("cook_time")),
             "ingredients": [i for i in (normalize_ingredient(x) for x in ingredients) if i],
             "steps": _str_list(raw.get("steps")),
-            "tags": _str_list(raw.get("tags"))[:12],
+            "tags": [],
             "favorite": bool(raw.get("favorite", existing.get("favorite", False))),
             "notes": str(raw.get("notes", existing.get("notes", "")) or ""),
             "source_url": str(raw.get("source_url") or existing.get("source_url") or ""),
@@ -260,6 +264,7 @@ class FrigoStore:
             "created_at": existing.get("created_at", now),
             "updated_at": now,
         }
+        recipe["tags"] = clean_tags(_str_list(raw.get("tags")), title, recipe["ingredients"])
         self.recipes[recipe_id] = recipe
         self._save()
         return recipe

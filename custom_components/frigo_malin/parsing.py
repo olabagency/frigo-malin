@@ -621,6 +621,52 @@ def _tags(node: dict[str, Any]) -> list[str]:
     return tags[:8]
 
 
+# Catégories reconnues : variante écrite (sans accents) -> étiquette affichée.
+_TAG_CANON = {
+    "plat": "Plat principal", "plat principal": "Plat principal", "plats principaux": "Plat principal", "main course": "Plat principal",
+    "entree": "Entrée", "entrees": "Entrée", "starter": "Entrée",
+    "dessert": "Dessert", "desserts": "Dessert",
+    "aperitif": "Apéritif", "apero": "Apéritif", "amuse bouche": "Apéritif",
+    "petit dejeuner": "Petit-déjeuner", "brunch": "Petit-déjeuner", "breakfast": "Petit-déjeuner",
+    "gouter": "Goûter", "accompagnement": "Accompagnement", "side dish": "Accompagnement",
+    "soupe": "Soupe", "potage": "Soupe", "veloute": "Soupe",
+    "salade": "Salade", "sauce": "Sauce", "boisson": "Boisson", "cocktail": "Boisson", "smoothie": "Boisson",
+    "vegetarien": "Végétarien", "vegetarienne": "Végétarien", "veggie": "Végétarien",
+    "vegan": "Vegan", "vegetalien": "Vegan", "rapide": "Rapide", "express": "Rapide", "facile et rapide": "Rapide",
+    "sans gluten": "Sans gluten", "leger": "Léger", "healthy": "Léger", "sain": "Léger",
+}
+_TAG_STOP = {"de", "du", "des", "la", "le", "les", "au", "aux", "a", "et", "en", "a la"}
+
+
+def clean_tags(tags: list[str], title: str = "", ingredients: list[dict[str, Any]] | None = None, limit: int = 4) -> list[str]:
+    """Garde peu de mots-clés utiles : les catégories connues d'abord, sans noms d'ingrédients ni bouts du titre."""
+    title_words = {w for w in _fold(title).split() if w not in _TAG_STOP}
+    ingredient_names = {_fold(str(i.get("name") or "")).strip() for i in ingredients or []}
+    canon: list[str] = []
+    other: list[str] = []
+    for raw in tags or []:
+        text = clean_text(raw).strip(" .#")
+        key = _fold(text).strip()
+        if not key:
+            continue
+        if key in _TAG_CANON:
+            label = _TAG_CANON[key]
+            if label not in canon:
+                canon.append(label)
+            continue
+        words = [w for w in key.split() if w not in _TAG_STOP]
+        if len(text) > 20 or len(key.split()) > 2 or not words:
+            continue
+        if key in ingredient_names or any(key in name.split() or name == key for name in ingredient_names):
+            continue
+        if title_words and sum(w in title_words for w in words) >= max(1, len(words) - 0):
+            continue
+        label = text[:1].upper() + text[1:]
+        if all(_fold(label) != _fold(o) for o in other):
+            other.append(label)
+    return (canon + other)[:limit]
+
+
 def _load_ldjson(block: str) -> Any:
     """Lit un bloc JSON-LD, même un peu abîmé (retours à la ligne bruts, commentaires, virgules en trop)."""
     text = block.strip()
