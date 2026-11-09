@@ -277,8 +277,15 @@ def parse_excluded(text: str) -> list[str]:
     return [_fold(part) for part in re.split(r"[,;\n]", text or "") if part.strip()]
 
 
+# Toujours dans le placard : jamais ajoutés à la liste depuis une recette, quel que soit le réglage.
+# Le mot doit être entier : « poivron » ou « selle d'agneau » ne sont pas concernés.
+_ALWAYS_EXCLUDED = re.compile(r"\b(?:sel|poivre)\b")
+
+
 def _is_excluded(name: str, excluded: list[str]) -> bool:
     folded = _fold(name)
+    if _ALWAYS_EXCLUDED.search(folded):
+        return True
     return any(folded == ex or folded.startswith(ex + " ") for ex in excluded if ex)
 
 

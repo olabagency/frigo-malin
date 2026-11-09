@@ -163,3 +163,19 @@ def test_pepper_mill_is_excluded_like_pepper():
         parse_excluded("sel, poivre, eau"),
     )
     assert [i["text"] for i in items] == ["Bœuf (200 g)"]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["sel", "Sel fin", "fleur de sel", "gros sel", "poivre", "poivre noir du moulin", "sel et poivre", "Poivre de Cayenne"],
+)
+def test_salt_and_pepper_are_never_on_the_list(name):
+    """Même si l'utilisateur a vidé la liste des exclusions."""
+    items = aggregate_shopping([([{"quantity": 1, "unit": "pincée", "name": name}], 1, "R")], excluded=[])
+    assert items == []
+
+
+@pytest.mark.parametrize("name", ["poivron rouge", "selle d'agneau", "céleri", "persil"])
+def test_similar_words_are_kept(name):
+    items = aggregate_shopping([([{"quantity": 1, "unit": "", "name": name}], 1, "R")], excluded=[])
+    assert len(items) == 1

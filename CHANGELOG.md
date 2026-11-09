@@ -7,6 +7,12 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.7.1] – 2026-11-09
+
+### Modifié
+
+- Le **sel** et le **poivre** ne sont plus jamais ajoutés à la liste de courses depuis une recette, sous toutes leurs formes (fleur de sel, gros sel, poivre noir du moulin…), quel que soit le réglage des exclusions. On peut toujours les ajouter soi-même avec l'ajout rapide.
+
 ## [1.7.0] – 2026-11-09
 
 ### Ajouté
