@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.15.0";
+const FM_VERSION = "1.15.1";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -2764,7 +2764,15 @@ class FrigoMalinPanel extends HTMLElement {
     this._renderOverlay();
     try {
       const res = await this._ws("recipes/import", { url: String(top.url).trim() });
-      this.s.stack.pop();
+      if (top.mode === "jow") {
+        // La recherche Jow reste dessous : la flèche retour y ramène, au même endroit.
+        top.loading = false;
+        top.importing = null;
+        const body = this.shadowRoot.querySelector("#overlay .body");
+        top.scroll = body ? body.scrollTop : 0;
+      } else {
+        this.s.stack.pop();
+      }
       this.s.stack.push({ type: "editor", draft: this._toDraft(res.recipe), imported: true });
     } catch (err) {
       top.loading = false;
@@ -3431,6 +3439,8 @@ class FrigoMalinPanel extends HTMLElement {
     host.dataset.key = key;
     const body = host.querySelector(".body");
     if (body && key === prevKey) body.scrollTop = scroll;
+    // Retour sur une fenêtre quittée plus tôt (ex. la recherche Jow) : même position qu'avant.
+    else if (body && top && top.scroll != null) body.scrollTop = top.scroll;
   }
 
   _renderToast() {

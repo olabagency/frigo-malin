@@ -7,6 +7,12 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.15.1] – 2026-11-09
+
+### Modifié
+
+- Import Jow : la flèche retour d'une recette ouverte depuis la recherche ramène à la recherche, avec les mêmes mots et au même endroit de la liste (au lieu de revenir à l'onglet Recettes).
+
 ## [1.15.0] – 2026-11-09
 
 ### Supprimé
