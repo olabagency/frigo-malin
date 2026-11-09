@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.4.1";
+const FM_VERSION = "1.5.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -324,7 +324,11 @@ input, textarea, select { font: inherit; color: var(--fm-text); }
 }
 .icon-btn:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
 
-main { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+main { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+/* L'en-tête et la barre du bas ne doivent jamais bouger avec le doigt : seul le contenu défile. */
+.app { overscroll-behavior: none; }
+#header, nav.tabs, .sheet > .toolbar, .sheet .footer, .cook .nav { touch-action: none; flex-shrink: 0; }
+.sheet .body { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .page { max-width: 760px; margin: 0 auto; padding: 16px 16px 32px; }
 
 nav.tabs {
@@ -427,7 +431,8 @@ select.input { appearance: auto; }
 }
 .li .tick ha-icon { --mdc-icon-size: 18px; }
 .li.done .tick { background: var(--fm-success); border-color: var(--fm-success); color: #fff; }
-.li .txt { flex: 1; min-width: 0; cursor: pointer; }
+.li .txt { flex: 1; min-width: 0; cursor: text; }
+.li .li-edit { min-height: 40px; padding: 8px 10px; font-size: 16px; }
 .li .txt .d { font-size: 12px; color: var(--fm-text2); }
 .li.done .txt > div:first-child { text-decoration: line-through; color: var(--fm-text2); }
 .li .icon-btn { width: 36px; height: 36px; color: var(--fm-text2); }
@@ -455,6 +460,7 @@ p.muted, .muted { color: var(--fm-text2); }
   background: var(--fm-primary); color: var(--fm-on-primary); font-weight: 500; font-size: 15px;
 }
 .btn:disabled { opacity: .5; cursor: default; }
+.btn ha-icon, .chip ha-icon { flex-shrink: 0; }
 .btn.block { width: 100%; }
 .btn.big { min-height: 56px; font-size: 16px; border-radius: 28px; }
 .btn.tonal { background: var(--fm-soft); color: var(--fm-primary); }
@@ -557,6 +563,23 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
   display: flex; gap: 12px; align-items: center; padding: 10px; margin-bottom: 8px; width: 100%; text-align: left;
   background: var(--fm-card); border: 1px solid var(--fm-divider); border-radius: var(--fm-radius);
 }
+/* Glisser une recette vers la gauche : favori ou suppression. */
+.swipe { position: relative; margin-bottom: 8px; border-radius: var(--fm-radius); overflow: hidden; }
+.swipe .list-item { margin-bottom: 0; position: relative; z-index: 1; transition: transform .2s ease; touch-action: pan-y; }
+.swipe.dragging .list-item { transition: none; }
+.swipe-actions { position: absolute; inset: 0 0 0 auto; display: flex; z-index: 0; }
+.swipe-actions button { width: 76px; border: 0; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 12px; font-weight: 500; }
+.swipe-actions .fav { background: var(--fm-warning); }
+.swipe-actions .del { background: var(--fm-error); }
+.swipe-hint { text-align: center; font-size: 12px; color: var(--fm-text2); margin: 4px 0 10px; }
+/* Fenêtre de confirmation. */
+.dialog-backdrop { position: absolute; inset: 0; z-index: 30; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fade .15s ease-out; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.dialog { background: var(--fm-card); color: var(--fm-text); border-radius: 18px; padding: 22px 20px 16px; width: 100%; max-width: 360px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+.dialog h3 { margin: 0 0 8px; }
+.dialog p { margin: 0 0 18px; color: var(--fm-text2); }
+.dialog .row { justify-content: flex-end; }
+.btn.danger-fill { background: var(--fm-error); color: #fff; }
 .thumb {
   width: 64px; height: 64px; border-radius: 10px; flex-shrink: 0; object-fit: cover;
   display: flex; align-items: center; justify-content: center; font-size: 30px;
@@ -678,8 +701,10 @@ class FrigoMalinPanel extends HTMLElement {
     this.shadowRoot.addEventListener("input", (ev) => this._onInput(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onChange(ev));
     this.shadowRoot.addEventListener("keydown", (ev) => this._onKey(ev));
-    this.shadowRoot.addEventListener("touchstart", (ev) => (this._touchX = ev.touches[0].clientX), { passive: true });
-    this.shadowRoot.addEventListener("touchend", (ev) => this._onSwipe(ev), { passive: true });
+    this.shadowRoot.addEventListener("touchstart", (ev) => this._onTouchStart(ev), { passive: true });
+    this.shadowRoot.addEventListener("touchmove", (ev) => this._onTouchMove(ev), { passive: false });
+    this.shadowRoot.addEventListener("touchend", (ev) => this._onTouchEnd(ev), { passive: true });
+    this.shadowRoot.addEventListener("focusout", (ev) => this._onFocusOut(ev));
   }
 
   _freshFridge(servings) {
@@ -879,10 +904,31 @@ class FrigoMalinPanel extends HTMLElement {
     const header = root.getElementById("header");
     if (header) header.innerHTML = this._tplHeader();
     const list = root.getElementById("shop-list");
-    if (list) list.innerHTML = this._tplShopList();
+    const editingInput = root.querySelector(".li-edit");
+    if (list && !(editingInput && this.s.list.editing && root.activeElement === editingInput)) list.innerHTML = this._tplShopList();
     root.querySelectorAll(".quick-sugg").forEach((el) => (el.innerHTML = this._tplQuickChips()));
     const count = root.getElementById("quick-count");
     if (count) count.innerHTML = this._tplQuickCount();
+  }
+
+  /* Enregistre le texte modifié d'un article (Entrée ou sortie du champ). */
+  _saveListEdit(input) {
+    if (!input || input.dataset.saving) return;
+    input.dataset.saving = "1";
+    const uid = input.dataset.uid;
+    const value = String(input.value || "").trim();
+    const item = this.s.list.items.find((i) => i.uid === uid);
+    this.s.list.editing = null;
+    if (item && value && value !== item.summary) {
+      item.summary = value;
+      this._todo("update_item", { item: uid, rename: value }).catch((err) => this._toast(this._err(err), true));
+    }
+    this._renderListParts();
+  }
+
+  _onFocusOut(ev) {
+    const el = ev.target;
+    if (el && el.dataset && el.dataset.edit === "list") this._saveListEdit(el);
   }
 
   async _quickAdd(texts) {
@@ -1009,20 +1055,140 @@ class FrigoMalinPanel extends HTMLElement {
       ev.preventDefault();
       this._dispatch(ev.target.dataset.enter, ev.target, ev);
     }
+    if (ev.key === "Escape" && this._confirmResolve) return this._closeDialog(false);
+    if (ev.key === "Escape" && this.s.list.editing) {
+      this.s.list.editing = null;
+      this._renderListParts();
+      return;
+    }
     if (ev.key === "Escape" && this.s.stack.length) this._dispatch("close");
   }
 
-  _onSwipe(ev) {
-    const top = this.top;
-    if (!top || top.type !== "cook" || this._touchX == null) return;
-    const dx = ev.changedTouches[0].clientX - this._touchX;
+  /* ---------------- gestes tactiles */
+
+  static get SWIPE_WIDTH() {
+    return 152;
+  }
+
+  _onTouchStart(ev) {
+    const t = ev.touches[0];
+    this._touchX = t.clientX;
+    this._touchY = t.clientY;
+    this._swipeDir = null;
+    const row = ev.composedPath().find((n) => n.dataset && n.dataset.swipe);
+    // Toucher ailleurs referme la recette ouverte.
+    if (this._openSwipe && this._openSwipe !== row) this._closeSwipe();
+    this._swipeRow = row || null;
+    this._swipeBase = row && row === this._openSwipe ? -FrigoMalinPanel.SWIPE_WIDTH : 0;
+  }
+
+  _onTouchMove(ev) {
+    const row = this._swipeRow;
+    if (!row || this._touchX == null) return;
+    const t = ev.touches[0];
+    const dx = t.clientX - this._touchX;
+    const dy = t.clientY - this._touchY;
+    if (!this._swipeDir) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      this._swipeDir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+    }
+    if (this._swipeDir !== "h") return;
+    ev.preventDefault();
+    row.classList.add("dragging");
+    const x = Math.max(-FrigoMalinPanel.SWIPE_WIDTH - 20, Math.min(0, this._swipeBase + dx));
+    row.querySelector(".list-item").style.transform = `translateX(${x}px)`;
+  }
+
+  _onTouchEnd(ev) {
+    const dx = this._touchX == null ? 0 : ev.changedTouches[0].clientX - this._touchX;
+    const row = this._swipeRow;
+    if (row && this._swipeDir === "h") {
+      row.classList.remove("dragging");
+      const x = this._swipeBase + dx;
+      if (x < -60) this._openSwipeRow(row);
+      else this._closeSwipe(row);
+      this._swipeJustMoved = true;
+      setTimeout(() => (this._swipeJustMoved = false), 350);
+    } else if (this.top && this.top.type === "cook" && Math.abs(dx) >= 60 && this._touchX != null) {
+      this._dispatch(dx < 0 ? "cook-next" : "cook-prev");
+    }
     this._touchX = null;
-    if (Math.abs(dx) < 60) return;
-    this._dispatch(dx < 0 ? "cook-next" : "cook-prev");
+    this._swipeRow = null;
+    this._swipeDir = null;
+  }
+
+  _openSwipeRow(row) {
+    if (this._openSwipe && this._openSwipe !== row) this._closeSwipe();
+    row.querySelector(".list-item").style.transform = `translateX(-${FrigoMalinPanel.SWIPE_WIDTH}px)`;
+    this._openSwipe = row;
+  }
+
+  _closeSwipe(row = this._openSwipe) {
+    if (row) {
+      const front = row.querySelector(".list-item");
+      if (front) front.style.transform = "";
+    }
+    if (row === this._openSwipe) this._openSwipe = null;
+  }
+
+  /* Fenêtre de confirmation : renvoie une promesse résolue à true / false. */
+  _confirm({ title, message, confirm = "Confirmer", danger = true }) {
+    return new Promise((resolve) => {
+      this._confirmResolve = resolve;
+      const host = this.shadowRoot.getElementById("dialog");
+      host.innerHTML = `<div class="dialog-backdrop" data-action="dialog-no">
+        <div class="dialog" role="alertdialog" aria-modal="true" data-action="dialog-noop">
+          <h3>${esc(title)}</h3>
+          <p>${esc(message)}</p>
+          <div class="row">
+            <button class="btn text" data-action="dialog-no">Annuler</button>
+            <button class="btn ${danger ? "danger-fill" : ""}" data-action="dialog-yes">${esc(confirm)}</button>
+          </div>
+        </div>
+      </div>`;
+      host.querySelector('[data-action="dialog-yes"]').focus();
+    });
+  }
+
+  _closeDialog(answer) {
+    const host = this.shadowRoot.getElementById("dialog");
+    if (host) host.innerHTML = "";
+    if (this._confirmResolve) {
+      this._confirmResolve(answer);
+      this._confirmResolve = null;
+    }
+  }
+
+  async _deleteRecipeConfirmed(id) {
+    const r = this._recipe(id);
+    if (!r) return false;
+    const ok = await this._confirm({
+      title: "Supprimer la recette ?",
+      message: `« ${r.title} » sera retirée du carnet et du menu. Cette action est définitive.`,
+      confirm: "Supprimer",
+    });
+    if (!ok) return false;
+    try {
+      await this._ws("recipes/delete", { recipe_id: id });
+      this.s.recipes = this.s.recipes.filter((x) => x.id !== id);
+      this.s.week.entries = this.s.week.entries.filter((e) => e.recipe_id !== id);
+      this._toast("Recette supprimée");
+      return true;
+    } catch (err) {
+      this._toast(this._err(err), true);
+      return false;
+    }
   }
 
   _onClick(ev) {
+    if (this._swipeJustMoved) return;
     const el = ev.composedPath().find((n) => n.dataset && n.dataset.action);
+    // Une recette ouverte par glissement se referme au lieu de s'ouvrir.
+    if (this._openSwipe && el && el.dataset.action === "open-recipe") {
+      ev.preventDefault();
+      this._closeSwipe();
+      return;
+    }
     if (!el || el.disabled) return;
     ev.preventDefault();
     this._dispatch(el.dataset.action, el, ev);
@@ -1102,6 +1268,20 @@ class FrigoMalinPanel extends HTMLElement {
         this._todo("update_item", { item: d.uid, status }).catch((err) => this._toast(this._err(err), true));
         return;
       }
+      case "list-edit":
+        s.list.editing = d.uid;
+        this._renderListParts();
+        {
+          const input = this.shadowRoot.querySelector(".li-edit");
+          if (input) {
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
+          }
+        }
+        return;
+      case "list-rename":
+        this._saveListEdit(el);
+        return;
       case "list-remove":
         s.list.items = s.list.items.filter((i) => i.uid !== d.uid);
         this._renderListParts();
@@ -1287,6 +1467,35 @@ class FrigoMalinPanel extends HTMLElement {
         return;
 
       /* Carnet */
+      case "dialog-yes":
+        this._closeDialog(true);
+        return;
+      case "dialog-no":
+        if (ev && ev.target && ev.target.closest && ev.target.closest(".dialog") && ev.target.dataset.action !== "dialog-no") return;
+        this._closeDialog(false);
+        return;
+      case "dialog-noop":
+        return;
+      case "swipe-fav": {
+        const r = this._recipe(d.id);
+        this._closeSwipe();
+        if (!r) return;
+        try {
+          const res = await this._ws("recipes/patch", { recipe_id: r.id, favorite: !r.favorite });
+          this._replaceRecipe(res.recipe);
+          this._toast(res.recipe.favorite ? "⭐ Ajoutée aux favoris" : "Retirée des favoris");
+          this._renderRecipeList();
+        } catch (err) {
+          this._toast(this._err(err), true);
+        }
+        return;
+      }
+      case "swipe-delete": {
+        const deleted = await this._deleteRecipeConfirmed(d.id);
+        this._closeSwipe();
+        if (deleted) this._render();
+        return;
+      }
       case "recipes-view":
         s.recipesView = d.value;
         if (d.value === "library") this._loadLibrary();
@@ -1699,20 +1908,9 @@ class FrigoMalinPanel extends HTMLElement {
 
   async _deleteRecipe() {
     const top = this.top;
-    if (!top.confirmDelete) {
-      top.confirmDelete = true;
-      this._renderOverlay();
-      return;
-    }
-    try {
-      await this._ws("recipes/delete", { recipe_id: top.id });
-      this.s.recipes = this.s.recipes.filter((r) => r.id !== top.id);
-      this.s.week.entries = this.s.week.entries.filter((e) => e.recipe_id !== top.id);
+    if (await this._deleteRecipeConfirmed(top.id)) {
       this.s.stack.pop();
-      this._toast("Recette supprimée");
       this._render();
-    } catch (err) {
-      this._toast(this._err(err), true);
     }
   }
 
@@ -1963,7 +2161,7 @@ class FrigoMalinPanel extends HTMLElement {
     }
     requestAnimationFrame(() => this._fitHeight());
     if (!root.querySelector(".app")) {
-      root.innerHTML = `<style>${STYLES}</style><div class="app"><div id="header"></div><main id="main"></main><nav class="tabs" id="nav"></nav><div id="overlay"></div><div id="toast"></div></div>`;
+      root.innerHTML = `<style>${STYLES}</style><div class="app"><div id="header"></div><main id="main"></main><nav class="tabs" id="nav"></nav><div id="overlay"></div><div id="toast"></div><div id="dialog"></div></div>`;
     }
     const main = root.getElementById("main");
     const scroll = main.scrollTop;
@@ -2246,7 +2444,9 @@ class FrigoMalinPanel extends HTMLElement {
     const row = (item) => `<div class="li ${item.status === "completed" ? "done" : ""}">
         <button class="tick" data-action="list-toggle" data-uid="${esc(item.uid)}" aria-label="${item.status === "completed" ? "Remettre dans la liste" : "Dans le panier"}">${icon("check")}</button>
         <span class="ing-emoji">${ingEmoji(item.summary)}</span>
-        <div class="txt" data-action="list-toggle" data-uid="${esc(item.uid)}"><div>${esc(item.summary)}</div>${item.description ? `<div class="d">${esc(item.description)}</div>` : ""}</div>
+        ${l.editing === item.uid
+          ? `<input class="input li-edit grow" value="${esc(item.summary)}" data-edit="list" data-uid="${esc(item.uid)}" data-enter="list-rename" enterkeyhint="done" aria-label="Modifier l'article">`
+          : `<div class="txt" data-action="list-edit" data-uid="${esc(item.uid)}" title="Toucher pour modifier"><div>${esc(item.summary)}</div>${item.description ? `<div class="d">${esc(item.description)}</div>` : ""}</div>`}
         <button class="icon-btn" data-action="list-remove" data-uid="${esc(item.uid)}" aria-label="Supprimer">${icon("close")}</button>
       </div>`;
 
@@ -2293,7 +2493,6 @@ class FrigoMalinPanel extends HTMLElement {
         ${this._tplQuickInput("quick-input")}
         <div class="chips quick-sugg">${this._tplQuickChips()}</div>
       </div>
-      <div class="card menu-card" id="shop-menu">${this._tplMenuCard()}</div>
       <div id="shop-list">${this._tplShopList()}</div>`;
   }
 
@@ -2788,13 +2987,19 @@ class FrigoMalinPanel extends HTMLElement {
       .map((r) => {
         const time = totalTime(r);
         const meta = [time ? fmtMinutes(time) : "", r.servings ? `${r.servings} pers.` : "", `${r.ingredients.length} ingrédients`].filter(Boolean).join(" · ");
-        return `<button class="list-item" data-action="open-recipe" data-id="${esc(r.id)}">
-          ${this._tplThumb(r)}
-          <div class="grow"><div class="t">${esc(r.title)}</div><div class="m">${esc(meta)}</div></div>
-          ${r.favorite ? `<span class="star">${icon("star")}</span>` : ""}
-        </button>`;
+        return `<div class="swipe" data-swipe="${esc(r.id)}">
+          <div class="swipe-actions">
+            <button class="fav" data-action="swipe-fav" data-id="${esc(r.id)}" aria-label="${r.favorite ? "Retirer des favoris" : "Mettre en favori"}">${icon(r.favorite ? "star-off-outline" : "star")}${r.favorite ? "Retirer" : "Favori"}</button>
+            <button class="del" data-action="swipe-delete" data-id="${esc(r.id)}" aria-label="Supprimer">${icon("delete-outline")}Supprimer</button>
+          </div>
+          <button class="list-item" data-action="open-recipe" data-id="${esc(r.id)}">
+            ${this._tplThumb(r)}
+            <div class="grow"><div class="t">${esc(r.title)}</div><div class="m">${esc(meta)}</div></div>
+            ${r.favorite ? `<span class="star">${icon("star")}</span>` : ""}
+          </button>
+        </div>`;
       })
-      .join("");
+      .join("") + `<p class="swipe-hint">${icon("gesture-swipe-left")} Glissez une recette vers la gauche pour la mettre en favori ou la supprimer.</p>`;
   }
 
   /* ---------------- onglet Semaine */
@@ -2948,7 +3153,7 @@ class FrigoMalinPanel extends HTMLElement {
       ${saved
         ? `<div class="actions-grid">
             <button class="btn outline" data-action="edit-recipe">${icon("pencil-outline")} Modifier</button>
-            <button class="btn danger ${top.confirmDelete ? "armed" : ""}" data-action="delete-recipe">${icon("delete-outline")} ${top.confirmDelete ? "Confirmer" : "Supprimer"}</button>
+            <button class="btn danger" data-action="delete-recipe">${icon("delete-outline")} Supprimer</button>
           </div>`
         : `<button class="btn tonal block" style="margin-top:16px" data-action="save-draft">${icon("book-plus-outline")} Enregistrer dans le carnet</button>`}
     `;

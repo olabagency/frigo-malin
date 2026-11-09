@@ -7,6 +7,22 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.5.0] – 2026-11-09
+
+### Ajouté
+
+- **Carnet de recettes** : glissez une recette vers la gauche pour la mettre en favori ⭐ ou la supprimer 🗑. La suppression demande confirmation, depuis la liste comme depuis la fiche recette.
+- **Liste de courses** : toucher le texte d'un article permet de le modifier (Entrée ou toucher ailleurs pour enregistrer, Échap pour annuler). Seul le rond de gauche coche l'article dans le panier.
+
+### Modifié
+
+- L'en-tête et la barre d'onglets restent fixes : seul le contenu défile, même en tirant vers le haut ou le bas.
+- La carte « Depuis le menu » quitte l'onglet Courses : les ingrédients s'ajoutent depuis la recette ou la planification.
+
+### Corrigé
+
+- L'icône « + » du bouton « Nouvelle » était écrasée.
+
 ## [1.4.1] – 2026-11-09
 
 ### Corrigé
