@@ -7,6 +7,21 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.9.0] – 2026-11-09
+
+### Ajouté
+
+- 🏠 **Page d'accueil** : nouvel onglet Accueil, sur lequel l'app s'ouvre.
+  - Raccourcis : 📸 photo du frigo, ✨ planifier la semaine, ➕ ajouter aux courses, 📚 bibliothèque.
+  - **Au menu** : le prochain repas (« Ce soir », « Demain midi »…) avec les boutons Cuisiner et La recette, puis les repas des jours suivants.
+  - **Mon frigo** : les aliments à consommer vite et le bouton « Des idées avec ce qu'il me reste ».
+  - **Courses** : le nombre d'articles restants, les premiers de la liste, et l'accès direct à la liste ou au magasin.
+
+### Modifié
+
+- **Réglages réorganisés** : un menu de six thèmes (Foyer, Repas et menus, Cuisine et goûts, Courses et magasins, Frigo, Intelligence artificielle), chacun avec un résumé de ce qui est réglé et sa propre page.
+- Les réglages sont **enregistrés automatiquement** (« ✓ Enregistré » en haut de la page) : plus de bouton Enregistrer.
+
 ## [1.8.1] – 2026-11-09
 
 ### Modifié

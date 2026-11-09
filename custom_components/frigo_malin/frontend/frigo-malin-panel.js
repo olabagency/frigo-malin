@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.8.1";
+const FM_VERSION = "1.9.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -622,6 +622,39 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .toast ha-icon { --mdc-icon-size: 20px; flex-shrink: 0; }
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
 
+/* Accueil */
+.home-hello { margin: 4px 2px 14px; }
+.home-hello h2 { margin: 0; }
+.home-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+.home-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px 10px; border-radius: 16px; border: 1px solid var(--fm-divider); background: var(--fm-card); color: var(--fm-text); font: inherit; font-size: 12px; line-height: 1.2; text-align: center; cursor: pointer; }
+.home-tile:active { transform: scale(.97); }
+.home-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.home-head h3 { margin: 0; flex: 1; }
+.home-head .btn.text { min-height: 32px; padding: 0 6px; font-size: 14px; }
+.home-head .count { font-size: 14px; color: var(--fm-text2); }
+.home-next { display: flex; gap: 12px; align-items: center; }
+.home-next .thumb { width: 72px; height: 72px; border-radius: 14px; flex-shrink: 0; object-fit: cover; display: flex; align-items: center; justify-content: center; font-size: 34px; }
+.home-next .when { font-size: 13px; font-weight: 600; color: var(--fm-primary); text-transform: uppercase; letter-spacing: .03em; }
+.home-next .what { font-size: 18px; font-weight: 600; margin: 2px 0 4px; }
+.home-later { margin-top: 14px; border-top: 1px solid var(--fm-divider); }
+.home-line { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 0; border: 0; border-bottom: 1px solid var(--fm-divider); background: none; color: var(--fm-text); font: inherit; text-align: left; cursor: pointer; }
+.home-line:last-child { border-bottom: 0; }
+.home-line .d { flex: 0 0 104px; font-size: 13px; color: var(--fm-text2); }
+.home-line .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-line ha-icon { color: var(--fm-text2); --mdc-icon-size: 18px; }
+
+/* Réglages par thèmes */
+.set-list { padding: 4px 0; }
+.set-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--fm-divider); background: none; color: var(--fm-text); font: inherit; text-align: left; cursor: pointer; }
+.set-row:last-child { border-bottom: 0; }
+.set-row .t { font-weight: 600; }
+.set-row .m { font-size: 13px; color: var(--fm-text2); margin-top: 2px; }
+.set-row > ha-icon { color: var(--fm-text2); }
+.save-state { font-size: 13px; color: var(--fm-text2); display: inline-flex; align-items: center; gap: 4px; padding-right: 8px; white-space: nowrap; }
+.save-state.saved { color: var(--fm-success, #2e9e5b); }
+.save-state.error { color: var(--fm-error); }
+.set-page-intro { margin-top: 0; }
+
 /* Frigo mémorisé */
 .memory { border-color: color-mix(in srgb, #22b8a7 45%, var(--fm-divider)); }
 .urgent { margin-top: 10px; padding: 8px 12px; border-radius: 10px; font-size: 14px; background: color-mix(in srgb, var(--fm-warning) 16%, transparent); }
@@ -846,8 +879,9 @@ class FrigoMalinPanel extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._narrow = false;
     this.s = {
-      tab: "fridge",
+      tab: "home",
       config: null,
+      home: { entries: [], loaded: false },
       recipes: [],
       loaded: false,
       search: "",
@@ -964,6 +998,7 @@ class FrigoMalinPanel extends HTMLElement {
     this._subscribeList();
     this._loadSuggestions();
     this._loadFridgeMemory();
+    this._loadHome();
     if (this._restoreCookSession()) this._render();
     this._applyRoute();
     if (!this._onLocation) {
@@ -979,7 +1014,7 @@ class FrigoMalinPanel extends HTMLElement {
     if (![...params.keys()].length) return;
     const s = this.s;
     const tab = params.get("tab");
-    if (["fridge", "recipes", "week", "shopping"].includes(tab)) {
+    if (["home", "fridge", "recipes", "week", "shopping"].includes(tab)) {
       s.stack = [];
       s.tab = tab;
       if (tab === "week") this._loadWeek();
@@ -1090,6 +1125,8 @@ class FrigoMalinPanel extends HTMLElement {
     root.querySelectorAll(".quick-sugg").forEach((el) => (el.innerHTML = this._tplQuickChips()));
     const count = root.getElementById("quick-count");
     if (count) count.innerHTML = this._tplQuickCount();
+    const home = root.getElementById("home-shopping");
+    if (home) home.innerHTML = this._tplHomeShopping();
   }
 
   /* Enregistre le texte modifié d'un article (Entrée ou sortie du champ). */
@@ -1188,6 +1225,7 @@ class FrigoMalinPanel extends HTMLElement {
     if (el.dataset.live === "recipes") this._renderRecipeList();
     if (el.dataset.live === "pick") this._renderPickList();
     if (path.startsWith("fridge.ingredients.")) this._syncFridgeMemory();
+    if (path.startsWith("top.draft.")) this._settingsDirtyCheck();
     if (el.dataset.live === "library") {
       const list = this.shadowRoot.getElementById("lib-list");
       if (list) list.innerHTML = this._tplLibItems();
@@ -1214,6 +1252,7 @@ class FrigoMalinPanel extends HTMLElement {
     if (kind === "photo" && el.files && el.files[0]) {
       const file = el.files[0];
       el.value = "";
+      this.s.tab = "fridge";
       await this._analysePhoto(file);
     } else if (kind === "ing-days") {
       const ing = this.s.fridge.ingredients[Number(el.dataset.i)];
@@ -1505,7 +1544,7 @@ class FrigoMalinPanel extends HTMLElement {
     }
     if (!el || el.disabled) return;
     ev.preventDefault();
-    this._dispatch(el.dataset.action, el, ev);
+    Promise.resolve(this._dispatch(el.dataset.action, el, ev)).finally(() => this._settingsDirtyCheck());
   }
 
   /* ---------------- actions */
@@ -1522,6 +1561,7 @@ class FrigoMalinPanel extends HTMLElement {
         return;
       case "tab":
         s.tab = d.tab;
+        if (s.tab === "home") this._loadHome();
         if (s.tab === "week") this._loadWeek();
         if (s.tab === "shopping") {
           this._loadMenuInfo();
@@ -1540,6 +1580,22 @@ class FrigoMalinPanel extends HTMLElement {
       /* Frigo */
       case "pick-photo":
         this.shadowRoot.getElementById(d.input).click();
+        return;
+      case "home-cook": {
+        const entry = s.home.entries.find((e) => e.id === d.id);
+        const r = entry && this._recipe(entry.recipe_id);
+        if (!r) return;
+        s.stack.push({ type: "recipe", id: r.id, servings: entry.servings, confirmDelete: false });
+        s.stack.push({ type: "cook", id: r.id, servings: entry.servings, step: -1, showIng: false, checked: [] });
+        this._requestWakeLock();
+        this._renderOverlay();
+        return;
+      }
+      case "home-go":
+        if (d.store) this._pickStore(d.store);
+        if (d.view) s.recipesView = d.view;
+        if (d.view === "library") this._loadLibrary();
+        this._dispatch("tab", { dataset: { tab: d.tab } });
         return;
       case "memory-use":
         this._useFridgeMemory();
@@ -1633,6 +1689,9 @@ class FrigoMalinPanel extends HTMLElement {
       /* Réglages du foyer */
       case "settings-open":
         s.stack.push({ type: "settings", draft: clone(this.settings) });
+        this._settingsDraft = this.top.draft;
+        this._saveState = null;
+        this._settingsSaved = JSON.stringify(this.top.draft);
         this._renderOverlay();
         // Dépense IA à jour.
         this._ws("config")
@@ -1647,8 +1706,10 @@ class FrigoMalinPanel extends HTMLElement {
         this.top.draft.servings = d.value ? Number(d.value) : null;
         this._renderOverlay();
         return;
-      case "settings-save":
-        this._saveSettings();
+      case "settings-page":
+        // Même brouillon que le menu : les résumés suivent les changements.
+        s.stack.push({ type: "settings-page", page: d.page, draft: this.top.draft });
+        this._renderOverlay();
         return;
       case "toggle-in": {
         const list = this._getPath(d.path) || [];
@@ -2029,7 +2090,7 @@ class FrigoMalinPanel extends HTMLElement {
         this._pickRecipe(d.id);
         return;
       case "meal-open": {
-        const entry = s.week.entries.find((e) => e.id === d.id);
+        const entry = [...s.week.entries, ...s.home.entries].find((e) => e.id === d.id);
         const r = entry && this._recipe(entry.recipe_id);
         if (r) {
           s.stack.push({ type: "recipe", id: r.id, servings: entry.servings, confirmDelete: false });
@@ -2151,15 +2212,39 @@ class FrigoMalinPanel extends HTMLElement {
     return obj;
   }
 
-  async _saveSettings() {
-    const top = this.top;
+  /* Réglages : enregistrés automatiquement, peu après chaque changement (ou dès la fermeture). */
+  _settingsDirtyCheck() {
+    const open = this.s.stack.find((x) => x.type === "settings");
+    const draft = open ? open.draft : this._settingsDraft;
+    if (!draft) return;
+    if (JSON.stringify(draft) === this._settingsSaved) {
+      if (!open) this._settingsDraft = null;
+      return;
+    }
+    this._settingsDraft = draft;
+    clearTimeout(this._settingsTimer);
+    if (!open) {
+      this._autosaveSettings();
+      return;
+    }
+    this._setSaveState("pending");
+    this._settingsTimer = setTimeout(() => this._autosaveSettings(), 700);
+  }
+
+  async _autosaveSettings() {
+    clearTimeout(this._settingsTimer);
+    const draft = this._settingsDraft;
+    if (!draft) return;
+    const json = JSON.stringify(draft);
+    this._settingsSaved = json;
+    this._setSaveState("saving");
     try {
-      const res = await this._ws("settings/save", { settings: top.draft });
+      const res = await this._ws("settings/save", { settings: JSON.parse(json) });
       this.s.config.settings = res.settings;
       this.s.config.default_servings = res.default_servings;
-      this.s.fridge.servings = res.default_servings;
+      if (this.s.fridge.step === "start") this.s.fridge.servings = res.default_servings;
       const before = this.listEntity;
-      this.s.config.shopping_list = res.shopping_list;
+      if (res.shopping_list !== undefined) this.s.config.shopping_list = res.shopping_list;
       if (this.listEntity !== before) {
         this._unsubscribeList();
         this.s.list.items = [];
@@ -2168,13 +2253,28 @@ class FrigoMalinPanel extends HTMLElement {
       }
       if (this.s.list.storeId && this.s.list.storeId !== "standard" && !res.settings.stores.some((x) => x.id === this.s.list.storeId)) this._pickStore(null);
       this._loadFridgeMemory();
-      this.s.stack.pop();
-      this._toast("Réglages enregistrés");
-      this._render();
+      this._setSaveState(JSON.stringify(draft) === json ? "saved" : "pending");
+      this._renderBehind();
     } catch (err) {
+      this._settingsSaved = null;
+      this._setSaveState("error");
       this._toast(this._err(err), true);
     }
+    if (!this.s.stack.some((x) => x.type === "settings") && JSON.stringify(draft) === this._settingsSaved) this._settingsDraft = null;
   }
+
+  /* Redessine l'app sous les fenêtres ouvertes, sans toucher au champ en cours de saisie. */
+  _renderBehind() {
+    const root = this.shadowRoot;
+    const main = root.getElementById("main");
+    if (!main) return;
+    const scroll = main.scrollTop;
+    root.getElementById("header").innerHTML = this._tplHeader();
+    main.innerHTML = `<div class="page">${this._tplTab()}</div>`;
+    main.scrollTop = scroll;
+    root.getElementById("nav").innerHTML = this._tplNav();
+  }
+
 
   async _readBook() {
     const top = this.top;
@@ -2493,6 +2593,38 @@ class FrigoMalinPanel extends HTMLElement {
 
   /* ---------------- frigo */
 
+  /* ---------------- accueil */
+
+  async _loadHome() {
+    const today = todayIso();
+    try {
+      const res = await this._ws("plan/list", { start: today, end: addDays(today, 6) });
+      this.s.home.entries = res.entries;
+    } catch (_) {
+      /* l'accueil reste utilisable sans le menu */
+    }
+    this.s.home.loaded = true;
+    if (this.s.tab === "home") this._render();
+  }
+
+  /* Repas à venir, dans l'ordre : on saute le midi d'aujourd'hui une fois l'après-midi commencée. */
+  _upcomingMeals() {
+    const today = todayIso();
+    const afternoon = new Date().getHours() >= 15;
+    const order = { lunch: 0, dinner: 1 };
+    return this.s.home.entries
+      .filter((e) => e.date > today || (e.date === today && !(afternoon && e.slot === "lunch")))
+      .sort((a, b) => a.date.localeCompare(b.date) || order[a.slot] - order[b.slot]);
+  }
+
+  _mealWhen(e) {
+    const today = todayIso();
+    const slot = e.slot === "lunch" ? "midi" : "soir";
+    if (e.date === today) return e.slot === "lunch" ? "Ce midi" : "Ce soir";
+    if (e.date === addDays(today, 1)) return `Demain ${slot}`;
+    return `${cap(fmtDay(e.date, { weekday: "long" }))} ${slot}`;
+  }
+
   /* ---------------- frigo mémorisé */
 
   async _loadFridgeMemory() {
@@ -2501,7 +2633,7 @@ class FrigoMalinPanel extends HTMLElement {
     } catch (_) {
       /* pas grave */
     }
-    if (this.s.tab === "fridge" && this.s.fridge.step === "start") this._render();
+    if (this.s.tab === "home" || (this.s.tab === "fridge" && this.s.fridge.step === "start")) this._render();
   }
 
   _fridgeItemsForSave() {
@@ -2528,7 +2660,9 @@ class FrigoMalinPanel extends HTMLElement {
     f.photo = null;
     f.error = null;
     f.step = "review";
+    this.s.tab = "fridge";
     this._render();
+    this.shadowRoot.querySelector("main")?.scrollTo(0, 0);
   }
 
   async _consumeAfterCook(recipe) {
@@ -3058,6 +3192,7 @@ class FrigoMalinPanel extends HTMLElement {
 
   _tplNav() {
     const tabs = [
+      ["home", "home-outline", "home", "Accueil"],
       ["fridge", "fridge-outline", "fridge", "Frigo"],
       ["recipes", "book-open-page-variant-outline", "book-open-page-variant", "Recettes"],
       ["week", "calendar-week-outline", "calendar-week", "Semaine"],
@@ -3093,6 +3228,7 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   _tplTabContent() {
+    if (this.s.tab === "home") return this._tplHome();
     if (this.s.tab === "recipes") return this._tplRecipes();
     if (this.s.tab === "week") return this._tplWeek();
     if (this.s.tab === "shopping") return this._tplShopping();
@@ -3100,6 +3236,96 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   /* ---------------- onglet Frigo */
+
+  _tplHome() {
+    const hour = new Date().getHours();
+    const hello = hour < 5 ? "Bonne nuit" : hour < 12 ? "Bonjour" : hour < 18 ? "Bon après-midi" : "Bonsoir";
+    const upcoming = this._upcomingMeals();
+    const next = upcoming[0];
+    const r = next && this._recipe(next.recipe_id);
+    const later = upcoming.slice(1, 6);
+
+    const tiles = [
+      ["camera-outline", COLORS.teal, "Photo du frigo", `data-action="pick-photo" data-input="home-cam"`],
+      ["creation", COLORS.indigo, "Planifier la semaine", `data-action="weekplan-open"`],
+      ["cart-plus", COLORS.green, "Ajouter aux courses", this.listEntity ? `data-action="quick-open"` : `data-action="home-go" data-tab="shopping"`],
+      ["bookshelf", COLORS.orange, "Bibliothèque", `data-action="home-go" data-tab="recipes" data-view="library"`],
+    ];
+
+    const meal = next
+      ? `<div class="home-next">
+          ${r ? this._tplThumb(r) : `<div class="thumb">🍽️</div>`}
+          <div class="grow">
+            <div class="when">${esc(this._mealWhen(next))}</div>
+            <div class="what">${esc(r ? r.title : "Recette supprimée")}</div>
+            <div class="muted small">${r && (r.prep_time || r.cook_time) ? `⏱️ ${(r.prep_time || 0) + (r.cook_time || 0)} min · ` : ""}👥 ${next.servings} pers.</div>
+          </div>
+        </div>
+        ${r ? `<div class="row" style="gap:8px;margin-top:12px">
+          <button class="btn grow" data-action="home-cook" data-id="${esc(next.id)}">${icon("chef-hat")} Cuisiner</button>
+          <button class="btn tonal grow" data-action="meal-open" data-id="${esc(next.id)}">${icon("book-open-variant")} La recette</button>
+        </div>` : ""}
+        ${later.length
+          ? `<div class="home-later">${later
+              .map((e) => {
+                const lr = this._recipe(e.recipe_id);
+                return `<button class="home-line" data-action="meal-open" data-id="${esc(e.id)}"><span class="d">${esc(this._mealWhen(e))}</span><span class="t">${lr ? emojiFor(lr.title) + " " + esc(lr.title) : "Recette supprimée"}</span>${icon("chevron-right")}</button>`;
+              })
+              .join("")}</div>`
+          : ""}`
+      : `<p class="muted" style="margin:4px 0 12px">Rien de prévu pour les prochains jours.</p>
+        <div class="row" style="gap:8px">
+          <button class="btn grow" data-action="weekplan-open">${icon("creation")} Planifier avec l'IA</button>
+          <button class="btn tonal grow" data-action="home-go" data-tab="week">${icon("plus")} Choisir</button>
+        </div>`;
+
+    const mem = this.s.fridgeMemory;
+    const urgent = mem.items.filter((i) => i.expires && daysLeft(i.expires) <= 2);
+    const fridge = mem.items.length
+      ? `${urgent.length
+          ? `<div class="urgent" style="margin-top:0">⚠️ À consommer vite : ${urgent.map((i) => `<b>${esc(i.name)}</b> (${esc(expiryLabel(i.expires).replace(/^⚠️ |^⏳ /, ""))})`).join(", ")}</div>`
+          : `<p class="muted small" style="margin:0">✅ Rien ne presse : ${mem.items.length} aliment${mem.items.length > 1 ? "s" : ""} en mémoire.</p>`}
+        <button class="btn tonal block" style="margin-top:12px" data-action="memory-use">💡 Des idées avec ce qu'il me reste</button>`
+      : `<p class="muted" style="margin:0 0 12px">Prenez votre frigo en photo : je vous dis quoi cuisiner avec ce qu'il contient.</p>
+        <button class="btn tonal block" data-action="pick-photo" data-input="home-cam">${icon("camera")} Prendre une photo</button>`;
+
+
+    return `
+      <input class="hidden-input" id="home-cam" type="file" accept="image/*" capture="environment" data-change="photo">
+      <div class="home-hello"><h2>${hello} 👋</h2><div class="muted">${esc(cap(fmtDay(todayIso())))}</div></div>
+      <div class="home-tiles">${tiles
+        .map(([ic, color, label, attrs]) => `<button class="home-tile" ${attrs}>${bubble(ic, color)}<span>${label}</span></button>`)
+        .join("")}</div>
+      <div class="card">
+        <div class="home-head">${bubble("silverware-fork-knife", COLORS.orange)}<h3>Au menu</h3>
+          <button class="btn text" data-action="home-go" data-tab="week">Semaine ${icon("chevron-right")}</button></div>
+        ${this.s.home.loaded ? meal : `<div class="spinner sm"></div>`}
+      </div>
+      <div class="card ${urgent.length ? "memory" : ""}">
+        <div class="home-head">${bubble("fridge-outline", COLORS.teal)}<h3>Mon frigo</h3>
+          ${mem.items.length ? `<button class="btn text" data-action="home-go" data-tab="fridge">Voir ${icon("chevron-right")}</button>` : ""}</div>
+        ${fridge}
+      </div>
+      ${this.listEntity ? `<div class="card" id="home-shopping">${this._tplHomeShopping()}</div>` : ""}
+      ${this._tplVersion()}`;
+  }
+
+  _tplHomeShopping() {
+    const pending = this.pendingItems;
+    const stores = this.settings.stores || [];
+    return `<div class="home-head">${bubble("cart-outline", COLORS.green)}<h3>Courses</h3>
+          <span class="count">${pending.length ? `${pending.length} article${pending.length > 1 ? "s" : ""}` : "✅ Tout est pris"}</span></div>
+        ${pending.length
+          ? `<div class="chips" style="margin-bottom:12px">${pending
+              .slice(0, 8)
+              .map((i) => `<span class="chip">${ingEmoji(i.summary)} ${esc(i.summary)}</span>`)
+              .join("")}${pending.length > 8 ? `<span class="chip">+${pending.length - 8}</span>` : ""}</div>`
+          : `<p class="muted small" style="margin:0 0 12px">La liste est vide.</p>`}
+        <div class="row" style="gap:8px">
+          <button class="btn tonal grow" data-action="home-go" data-tab="shopping">${icon("format-list-checks")} Voir la liste</button>
+          ${stores.length && pending.length ? `<button class="btn tonal grow" data-action="home-go" data-tab="shopping" data-store="${esc(stores[0].id)}">🏪 Au magasin</button>` : ""}
+        </div>`;
+  }
 
   _tplFridge() {
     const f = this.s.fridge;
@@ -3369,15 +3595,75 @@ class FrigoMalinPanel extends HTMLElement {
     return parts.join(" · ");
   }
 
+  /* Réglages : un menu de thèmes, chaque thème ouvre sa page. Tout est enregistré automatiquement. */
+  _settingsThemes(d) {
+    const portions = d.members.reduce((t, m) => t + ({ adult: 1, teen: 1, child: 0.5, toddler: 0.25 })[m.age], 0);
+    const serv = d.servings || (d.members.length ? Math.max(1, Math.ceil(portions - 0.01)) : this.defaultServings);
+    const allergies = new Set(d.members.flatMap((m) => m.allergies)).size;
+    const slots = d.plan_slots || {};
+    const perWeek = (slots.lunch_weekday ? 5 : 0) + (slots.dinner_weekday ? 5 : 0) + (slots.lunch_weekend ? 2 : 0) + (slots.dinner_weekend ? 2 : 0);
+    const plain = (t) => String(t).replace(/^\S+\s/u, "");
+    const listName = d.shopping_entity
+      ? (this._hass.states[d.shopping_entity] && this._hass.states[d.shopping_entity].attributes.friendly_name) || d.shopping_entity
+      : (this.s.config.shopping_list && this.s.config.shopping_list.name) || "Liste automatique";
+    const u = (this.s.config && this.s.config.usage) || { eur: 0 };
+    const days = Number(d.fridge_days ?? 5);
+    const nFridge = this.s.fridgeMemory.items.length;
+    return [
+      ["household", "account-group-outline", COLORS.blue, "Foyer",
+        `${d.members.length ? `${d.members.length} personne${d.members.length > 1 ? "s" : ""}` : "Personne pour l'instant"} · ${serv} portion${serv > 1 ? "s" : ""}${allergies ? ` · ⚠️ ${allergies} allergie${allergies > 1 ? "s" : ""}` : ""}`],
+      ["meals", "calendar-clock-outline", COLORS.orange, "Repas et menus",
+        `${perWeek} repas par semaine · ${d.time_weekday} min en semaine${d.budget_week ? ` · ${d.budget_week} €` : ""}`],
+      ["cooking", "chef-hat", COLORS.red, "Cuisine et goûts",
+        [d.equipment.slice(0, 2).map((k) => HH.equipment[k]).join(", "), d.goals.slice(0, 2).map((k) => plain(HH.goals[k])).join(", ")].filter(Boolean).join(" · ") || "Équipement, cuisines, objectifs"],
+      ["shopping", "cart-outline", COLORS.green, "Courses et magasins",
+        `${listName} · ${d.stores.length ? d.stores.map((x) => x.name).join(", ") : "aucun magasin"}${d.stores.length && d.store_reminder ? " · rappel activé" : ""}`],
+      ["fridge", "fridge-outline", COLORS.teal, "Frigo",
+        `${days ? `Gardé ${days} jours` : "Jusqu'à la prochaine photo"}${nFridge ? ` · ${nFridge} aliment${nFridge > 1 ? "s" : ""}` : ""}`],
+      ["ai", "robot-outline", COLORS.indigo, "Intelligence artificielle",
+        `${d.ai_mode === "single" ? "Un seul modèle" : "Économique"} · ≈ ${fmtNumber(u.eur)} € ce mois`],
+    ];
+  }
+
+  _tplSaveState() {
+    const st = this._saveState;
+    if (!st) return `<span class="save-state" id="save-state"></span>`;
+    const label = { pending: "Enregistrement…", saving: "Enregistrement…", saved: "✓ Enregistré", error: "⚠️ Non enregistré" }[st];
+    return `<span class="save-state ${st}" id="save-state">${label}</span>`;
+  }
+
+  _setSaveState(st) {
+    this._saveState = st;
+    clearTimeout(this._saveStateTimer);
+    if (st === "saved") this._saveStateTimer = setTimeout(() => this._setSaveState(null), 2500);
+    const el = this.shadowRoot.getElementById("save-state");
+    if (el) el.outerHTML = this._tplSaveState();
+  }
+
   _tplSettings(top) {
+    const d = top.draft;
+    const body = `
+      <p class="muted set-page-intro">Ces informations guident toutes les propositions de l'IA. Les changements sont enregistrés automatiquement.</p>
+      <div class="card set-list">${this._settingsThemes(d)
+        .map(([key, ic, color, title, summary]) => `<button class="set-row" data-action="settings-page" data-page="${key}">
+          ${bubble(ic, color)}
+          <div class="grow"><div class="t">${title}</div><div class="m">${esc(summary)}</div></div>
+          ${icon("chevron-right")}
+        </button>`)
+        .join("")}</div>
+      <p class="muted small" style="text-align:center">La clé d'IA et le fournisseur se changent dans Paramètres → Appareils et services → Frigo Malin → Configurer.</p>
+      ${this._tplVersion()}`;
+    return this._tplSheet("Réglages", body, "", this._tplSaveState());
+  }
+
+  _tplSettingsPage(top) {
     const d = top.draft;
     const portions = d.members.reduce((t, m) => t + ({ adult: 1, teen: 1, child: 0.5, toddler: 0.25 })[m.age], 0);
     const zones = Object.keys(this._hass.states).filter((id) => id.startsWith("zone."));
     const zoneName = (id) => (this._hass.states[id] ? this._hass.states[id].attributes.friendly_name || id : id);
-    const body = `
-      <p class="muted" style="margin-top:0">Ces informations guident toutes les propositions de l'IA : idées du frigo et menus de la semaine.</p>
-
-      <div class="set-sec">${bubble("account-group-outline", COLORS.blue)}<h3>Le foyer</h3></div>
+    const pages = {
+      household: ["Foyer", `
+      <p class="muted set-page-intro">Qui mange à la maison : l'IA respecte les âges, régimes, allergies et goûts de chacun.</p>
       ${d.members
         .map((m, i) => `<button class="member" data-action="member-edit" data-i="${i}">
           <span class="av">${HH.ages[m.age][1]}</span>
@@ -3388,13 +3674,42 @@ class FrigoMalinPanel extends HTMLElement {
       <button class="btn tonal block" data-action="member-add">${icon("account-plus-outline")} Ajouter une personne</button>
       ${d.members.length ? `<p class="hh-hint">${icon("silverware-fork-knife")} Portions calculées : ${fmtNumber(portions)} → ${Math.max(1, Math.ceil(portions - 0.01))} par repas (un enfant compte pour ½).</p>` : ""}
 
-      <div class="set-sec">${bubble("silverware-fork-knife", COLORS.green)}<h3>Portions et liste de courses</h3></div>
+
+      <div class="set-sec">${bubble("silverware-fork-knife", COLORS.green)}<h3>Portions</h3></div>
       <div class="field"><span>Nombre de personnes par défaut (recettes, menus, idées)</span>
         <div class="chips">
           <button class="chip ${!d.servings ? "on" : ""}" data-action="set-servings" data-value="">Auto${d.members.length ? ` (${Math.max(1, Math.ceil(portions - 0.01))})` : ""}</button>
           ${[1, 2, 3, 4, 5, 6, 8].map((n) => `<button class="chip ${d.servings === n ? "on" : ""}" data-action="set-servings" data-value="${n}">${n} pers.</button>`).join("")}
         </div>
       </div>
+`],
+      meals: ["Repas et menus", `
+      <div class="field"><span>Repas à planifier par défaut</span>
+        ${this._tplSwitch("top.draft.plan_slots.lunch_weekday", d.plan_slots.lunch_weekday, "☀️ Midi en semaine")}
+        ${this._tplSwitch("top.draft.plan_slots.dinner_weekday", d.plan_slots.dinner_weekday, "🌙 Soir en semaine")}
+        ${this._tplSwitch("top.draft.plan_slots.lunch_weekend", d.plan_slots.lunch_weekend, "☀️ Midi le week-end")}
+        ${this._tplSwitch("top.draft.plan_slots.dinner_weekend", d.plan_slots.dinner_weekend, "🌙 Soir le week-end")}
+      </div>
+      <div class="set-sec">${bubble("timer-outline", COLORS.orange)}<h3>Temps en cuisine</h3></div>
+      <div class="row wrap" style="justify-content:space-between;margin-bottom:12px">
+        <span class="muted small">En semaine (prépa + cuisson)</span>${this._tplStepper("top.draft.time_weekday", d.time_weekday, "min", 10, 240, 5)}
+      </div>
+      <div class="row wrap" style="justify-content:space-between;margin-bottom:12px">
+        <span class="muted small">Le week-end</span>${this._tplStepper("top.draft.time_weekend", d.time_weekend, "min", 10, 360, 15)}
+      </div>
+      <div class="set-sec">${bubble("cash", COLORS.green)}<h3>Budget</h3></div>
+      <label class="field"><span>${icon("cash")} Budget courses par semaine (facultatif)</span>
+        <input class="input" type="number" min="0" inputmode="numeric" placeholder="Ex. : 80 €" value="${esc(d.budget_week ?? "")}" data-model="top.draft.budget_week"></label>
+`],
+      cooking: ["Cuisine et goûts", `
+      <div class="field"><span>Équipement</span>${this._tplMulti("top.draft.equipment", d.equipment, HH.equipment)}</div>
+      <div class="field"><span>Cuisines préférées</span>${this._tplMulti("top.draft.cuisines", d.cuisines, HH.cuisines)}</div>
+      <div class="field"><span>Objectifs</span>${this._tplMulti("top.draft.goals", d.goals, HH.goals)}</div>
+      <label class="field"><span>Autres consignes pour l'IA</span>
+        <textarea class="input" rows="3" placeholder="Ex. : pas de coriandre, poisson le vendredi, plats qui se réchauffent pour le midi…" data-model="top.draft.notes">${esc(d.notes)}</textarea></label>
+
+`],
+      shopping: ["Courses et magasins", `
       <label class="field"><span>${icon("cart-outline")} Liste de courses</span>
         <select class="input" data-model="top.draft.shopping_entity">
           <option value="">Automatique${this.s.config.shopping_list && this.s.config.shopping_list.name && !d.shopping_entity ? ` (${esc(this.s.config.shopping_list.name)})` : ""}</option>
@@ -3405,48 +3720,6 @@ class FrigoMalinPanel extends HTMLElement {
         </select></label>
       <p class="muted small" style="margin-top:-6px">« Frigo Malin courses » est la liste intégrée, utilisée si vous n'en choisissez pas d'autre. Toute liste de Home Assistant convient (Liste de courses, Bring!, Todoist…).</p>
 
-      <div class="set-sec">${bubble("timer-outline", COLORS.orange)}<h3>Temps et budget</h3></div>
-      <div class="row wrap" style="justify-content:space-between;margin-bottom:12px">
-        <span class="muted small">En semaine (prépa + cuisson)</span>${this._tplStepper("top.draft.time_weekday", d.time_weekday, "min", 10, 240, 5)}
-      </div>
-      <div class="row wrap" style="justify-content:space-between;margin-bottom:12px">
-        <span class="muted small">Le week-end</span>${this._tplStepper("top.draft.time_weekend", d.time_weekend, "min", 10, 360, 15)}
-      </div>
-      <label class="field"><span>${icon("cash")} Budget courses par semaine (facultatif)</span>
-        <input class="input" type="number" min="0" inputmode="numeric" placeholder="Ex. : 80 €" value="${esc(d.budget_week ?? "")}" data-model="top.draft.budget_week"></label>
-      <div class="field"><span>Repas à planifier par défaut</span>
-        ${this._tplSwitch("top.draft.plan_slots.lunch_weekday", d.plan_slots.lunch_weekday, "☀️ Midi en semaine")}
-        ${this._tplSwitch("top.draft.plan_slots.dinner_weekday", d.plan_slots.dinner_weekday, "🌙 Soir en semaine")}
-        ${this._tplSwitch("top.draft.plan_slots.lunch_weekend", d.plan_slots.lunch_weekend, "☀️ Midi le week-end")}
-        ${this._tplSwitch("top.draft.plan_slots.dinner_weekend", d.plan_slots.dinner_weekend, "🌙 Soir le week-end")}
-      </div>
-
-      <div class="set-sec">${bubble("chef-hat", COLORS.red)}<h3>Cuisine</h3></div>
-      <div class="field"><span>Équipement</span>${this._tplMulti("top.draft.equipment", d.equipment, HH.equipment)}</div>
-      <div class="field"><span>Cuisines préférées</span>${this._tplMulti("top.draft.cuisines", d.cuisines, HH.cuisines)}</div>
-      <div class="field"><span>Objectifs</span>${this._tplMulti("top.draft.goals", d.goals, HH.goals)}</div>
-      <label class="field"><span>Autres consignes pour l'IA</span>
-        <textarea class="input" rows="3" placeholder="Ex. : pas de coriandre, poisson le vendredi, plats qui se réchauffent pour le midi…" data-model="top.draft.notes">${esc(d.notes)}</textarea></label>
-
-      <div class="set-sec">${bubble("fridge-outline", COLORS.teal)}<h3>Frigo mémorisé</h3></div>
-      <div class="field"><span>Combien de temps garder la dernière photo du frigo</span>
-        <div class="chips">
-          ${[[3, "3 jours"], [5, "5 jours"], [7, "1 semaine"], [14, "2 semaines"], [0, "Jusqu'à la prochaine photo"]]
-            .map(([v, label]) => `<button class="chip ${Number(d.fridge_days ?? 5) === v ? "on" : ""}" data-action="set-fridge-days" data-value="${v}">${label}</button>`)
-            .join("")}
-        </div>
-      </div>
-      <button class="btn danger block" data-action="memory-clear" ${this.s.fridgeMemory.items.length ? "" : "disabled"}>${icon("delete-outline")} Oublier le contenu du frigo${this.s.fridgeMemory.items.length ? ` (${this.s.fridgeMemory.items.length} aliments)` : ""}</button>
-
-      <div class="set-sec">${bubble("robot-outline", COLORS.indigo)}<h3>Intelligence artificielle</h3></div>
-      <div class="segmented">
-        <button class="${d.ai_mode !== "single" ? "on" : ""}" data-action="set" data-path="top.draft.ai_mode" data-value="economy">💡 Économique</button>
-        <button class="${d.ai_mode === "single" ? "on" : ""}" data-action="set" data-path="top.draft.ai_mode" data-value="single">🎯 Un seul modèle</button>
-      </div>
-      <p class="muted small">${d.ai_mode === "single"
-        ? `Toutes les demandes utilisent le modèle choisi dans les options de l'intégration (${esc((this.s.config && this.s.config.model) || "")}).`
-        : "Le modèle le plus léger pour la photo du frigo et les idées, un modèle intermédiaire pour lire une page ou trouver des idées saines, le plus puissant seulement pour planifier la semaine et lire une recette photographiée."}</p>
-      <div class="info" id="ai-usage">${this._tplUsage()}</div>
 
       <div class="set-sec">${bubble("store-outline", COLORS.teal)}<h3>Magasins</h3></div>
       <p class="muted small" style="margin-top:0">Rangez les rayons dans l'ordre de votre magasin. Reliez-le à une zone de Home Assistant pour recevoir la liste sur votre téléphone en arrivant.</p>
@@ -3458,9 +3731,33 @@ class FrigoMalinPanel extends HTMLElement {
         </button>`)
         .join("")}
       <button class="btn tonal block" data-action="store-add">${icon("store-plus-outline")} Ajouter un magasin</button>
-      ${this._tplSwitch("top.draft.store_reminder", d.store_reminder, "🔔 Rappel en arrivant au magasin", zones.length ? "Notification sur le téléphone de la personne qui arrive, si la liste n'est pas vide." : "Créez d'abord une zone pour votre magasin dans Paramètres → Zones.")}`;
-    const footer = `<button class="btn grow big" data-action="settings-save">${icon("content-save-outline")} Enregistrer</button>`;
-    return this._tplSheet("Réglages du foyer", body, footer);
+      ${this._tplSwitch("top.draft.store_reminder", d.store_reminder, "🔔 Rappel en arrivant au magasin", zones.length ? "Notification sur le téléphone de la personne qui arrive, si la liste n'est pas vide." : "Créez d'abord une zone pour votre magasin dans Paramètres → Zones.")}`],
+      fridge: ["Frigo", `
+      <p class="muted set-page-intro">La dernière photo du frigo est gardée en mémoire pour proposer des idées sans reprendre de photo.</p>
+      <div class="field"><span>Combien de temps garder la dernière photo du frigo</span>
+        <div class="chips">
+          ${[[3, "3 jours"], [5, "5 jours"], [7, "1 semaine"], [14, "2 semaines"], [0, "Jusqu'à la prochaine photo"]]
+            .map(([v, label]) => `<button class="chip ${Number(d.fridge_days ?? 5) === v ? "on" : ""}" data-action="set-fridge-days" data-value="${v}">${label}</button>`)
+            .join("")}
+        </div>
+      </div>
+      <button class="btn danger block" data-action="memory-clear" ${this.s.fridgeMemory.items.length ? "" : "disabled"}>${icon("delete-outline")} Oublier le contenu du frigo${this.s.fridgeMemory.items.length ? ` (${this.s.fridgeMemory.items.length} aliments)` : ""}</button>
+
+`],
+      ai: ["Intelligence artificielle", `
+      <div class="segmented">
+        <button class="${d.ai_mode !== "single" ? "on" : ""}" data-action="set" data-path="top.draft.ai_mode" data-value="economy">💡 Économique</button>
+        <button class="${d.ai_mode === "single" ? "on" : ""}" data-action="set" data-path="top.draft.ai_mode" data-value="single">🎯 Un seul modèle</button>
+      </div>
+      <p class="muted small">${d.ai_mode === "single"
+        ? `Toutes les demandes utilisent le modèle choisi dans les options de l'intégration (${esc((this.s.config && this.s.config.model) || "")}).`
+        : "Le modèle le plus léger pour la photo du frigo et les idées, un modèle intermédiaire pour lire une page ou trouver des idées saines, le plus puissant seulement pour planifier la semaine et lire une recette photographiée."}</p>
+      <div class="info" id="ai-usage">${this._tplUsage()}</div>
+
+`],
+    };
+    const [title, body] = pages[top.page];
+    return this._tplSheet(title, body, "", this._tplSaveState());
   }
 
   _tplUsage() {
@@ -4025,6 +4322,8 @@ class FrigoMalinPanel extends HTMLElement {
         return this._tplQuickSheet();
       case "settings":
         return this._tplSettings(top);
+      case "settings-page":
+        return this._tplSettingsPage(top);
       case "member":
         return this._tplMember(top);
       case "store":
