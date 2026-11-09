@@ -13,13 +13,13 @@ Une intégration Home Assistant pour cuisiner avec ce qu'il y a dans le frigo, g
 Prenez le frigo en photo depuis l'app Home Assistant. L'IA reconnaît les ingrédients, vous corrigez la liste, puis elle propose des recettes classiques ou plus créatives, en indiquant ce qu'elles utilisent et ce qu'il faudrait acheter.
 
 **📖 Carnet de recettes**
-- Ajout à la main, ou depuis l'adresse d'une recette (Marmiton, 750g, Cuisine AZ, la plupart des blogs).
+- Ajout à la main, ou depuis l'adresse d'une recette (Jow, Marmiton, 750g, Cuisine AZ, la plupart des blogs).
 - Favoris, mots-clés, notes personnelles.
 - Portions ajustables : les quantités se recalculent.
 - Mode « cuisine » : une étape à la fois, en grand, l'écran reste allumé. On passe d'une étape à l'autre en balayant l'écran.
 
-**🌿 Bibliothèque de recettes saines**
-42 recettes équilibrées et anti-inflammatoires, de saison, à parcourir par thème et à ajouter au carnet en un appui. Les recettes incompatibles avec les allergies du foyer sont masquées, et l'IA peut en inventer d'autres sur le thème de votre choix.
+**🥘 Recettes Jow**
+Les quelque 3 700 recettes de jow.fr à chercher par plat ou ingrédient, et à importer d'un appui avec les quantités adaptées au foyer.
 
 **📖 Recette en photo**
 Une page de livre, de magazine ou la fiche manuscrite de mamie : une photo (ou plusieurs pages) et la recette arrive dans le carnet.

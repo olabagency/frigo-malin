@@ -273,6 +273,31 @@ async def test_storage_migration_from_1_0(hass: HomeAssistant, hass_storage) -> 
     assert entry.runtime_data.store.shopping_history == {}
 
 
+async def test_library_recipes_are_removed(hass: HomeAssistant, hass_storage) -> None:
+    """1.15.0 : la bibliothèque disparaît, avec les recettes qui en venaient et leurs repas prévus."""
+    from custom_components.frigo_malin.const import STORAGE_KEY
+
+    mine = {"id": "a", "title": "Gratin", "servings": 4, "ingredients": [], "steps": [], "tags": [], "origin": "manual"}
+    lib = {"id": "b", "title": "Dahl", "servings": 4, "ingredients": [], "steps": [], "tags": [], "origin": "library", "library_id": "lib-dahl"}
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 5,
+        "key": STORAGE_KEY,
+        "data": {
+            "last_version": "1.14.0",
+            "recipes": [mine, lib],
+            "plan": [
+                {"id": "p1", "date": "2026-11-10", "slot": "dinner", "recipe_id": "a", "servings": 2},
+                {"id": "p2", "date": "2026-11-11", "slot": "dinner", "recipe_id": "b", "servings": 2},
+            ],
+        },
+    }
+    entry = await _setup(hass)
+    store = entry.runtime_data.store
+    assert list(store.recipes) == ["a"]
+    assert list(store.plan) == ["p1"]
+
+
 async def test_settings_photo_and_sensor(hass: HomeAssistant, hass_ws_client, aioclient_mock) -> None:
     from datetime import timedelta
 
@@ -436,44 +461,6 @@ async def test_store_reminder(hass: HomeAssistant, hass_ws_client) -> None:
     assert data["title"] == "🛒 2 articles à acheter chez Leclerc Saint-Jean"
     assert data["message"] == "Lait, Pain"
     assert data["data"]["clickAction"] == f"/frigo-malin?tab=shopping&store={store_id}"
-
-
-async def test_library_and_ideas(hass: HomeAssistant, hass_ws_client, aioclient_mock) -> None:
-    await _setup(hass)
-    client = await hass_ws_client(hass)
-
-    async def ws(msg_type: str, **payload):
-        await client.send_json_auto_id({"type": f"frigo_malin/{msg_type}", **payload})
-        return await client.receive_json()
-
-    library = await ws("library/list")
-    assert library["success"], library
-    recipes = library["result"]["recipes"]
-    assert len(recipes) >= 40
-    soup = next(r for r in recipes if r["library_id"] == "soupe-lentilles-corail-curcuma")
-
-    # Ajouter une recette de la bibliothèque au carnet : nouvel identifiant, lien et bienfaits conservés.
-    saved = await ws("recipes/save", recipe={k: v for k, v in soup.items() if k not in ("themes", "allergens", "months")})
-    assert saved["success"], saved
-    recipe = saved["result"]["recipe"]
-    assert recipe["id"] != soup["id"] and not recipe["id"].startswith("lib-")
-    assert recipe["library_id"] == "soupe-lentilles-corail-curcuma"
-    assert recipe["benefits"] == soup["benefits"]
-
-    aioclient_mock.post(
-        "https://api.anthropic.com/v1/messages",
-        json={"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps({"recipes": [{
-            "title": "Bowl sarrasin et saumon", "servings": 2, "tags": ["Oméga-3", "Fibres"],
-            "ingredients": [{"quantity": 150, "unit": "g", "name": "sarrasin"}], "steps": ["Cuire", "Servir"],
-        }]})}]},
-    )
-    ideas = await ws("library/ideas", theme="anti_inflammatory", dish_type="main", count=2)
-    assert ideas["success"], ideas
-    idea = ideas["result"]["recipes"][0]
-    assert idea["benefits"] == ["Oméga-3", "Fibres"]
-    assert idea["tags"] == ["Anti-inflammatoire"]
-    prompt = aioclient_mock.mock_calls[-1][2]["messages"][0]["content"][-1]["text"]
-    assert "anti-inflammatoire" in prompt and "plat" in prompt and "Soupe de lentilles corail" in prompt
 
 
 async def test_builtin_list_and_default_servings(hass: HomeAssistant, hass_ws_client) -> None:
@@ -732,8 +719,6 @@ async def test_nutrition_is_attached_and_completed(hass: HomeAssistant, hass_ws_
     listed = (await ws("recipes/list"))["result"]["recipes"]
     bowl = next(r for r in listed if r["title"] == "Bowl")
     assert bowl["nutrition"]["kcal"] == 350 + 39 and bowl["nutrition"]["ai"]
-    library = (await ws("library/list"))["result"]["recipes"]
-    assert all("nutrition" in r for r in library)
 
 
 async def test_fridge_photo_is_kept(hass: HomeAssistant, hass_ws_client) -> None:

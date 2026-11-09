@@ -7,6 +7,19 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.15.0] – 2026-11-09
+
+### Supprimé
+
+- La **Bibliothèque** est retirée : l'onglet, ses 42 recettes intégrées et les idées de recettes saines de l'IA.
+  - Les recettes du carnet qui venaient de la Bibliothèque sont supprimées à la mise à jour, ainsi que leurs repas prévus dans le menu.
+  - Vos autres recettes ne changent pas.
+
+### Modifié
+
+- L'onglet Recettes affiche directement votre carnet.
+- Sur l'accueil, le raccourci « Bibliothèque » devient **« Recettes Jow »** : il ouvre la recherche Jow.
+
 ## [1.14.0] – 2026-11-09
 
 ### Ajouté

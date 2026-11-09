@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.14.0";
+const FM_VERSION = "1.15.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -231,17 +231,6 @@ const PLAN_LOADING = [
   "J'organise les restes pour ne rien jeter…", "Je compte les euros…", "Je dresse la table…",
 ];
 const clone = (o) => JSON.parse(JSON.stringify(o));
-
-/* Bibliothèque de recettes saines. */
-const LIB_THEMES = [
-  ["anti_inflammatory", "🌿", "Anti-inflammatoire"], ["balanced", "⚖️", "Équilibré"], ["vegetarian", "🥕", "Végétarien"],
-  ["vegan", "🌱", "Vegan"], ["gluten_free", "🌾", "Sans gluten"], ["quick", "⚡", "Rapide"], ["protein", "💪", "Protéiné"],
-  ["light", "🪶", "Léger"], ["budget", "💶", "Petit budget"], ["batch", "📦", "Se garde bien"],
-];
-const LIB_TYPES = [
-  ["breakfast", "☀️", "Petit-déj"], ["soup", "🍲", "Soupes"], ["salad", "🥗", "Salades & bowls"], ["main", "🍽️", "Plats"], ["dessert", "🍰", "Desserts"],
-];
-const THEME_ICON = Object.fromEntries(LIB_THEMES.map(([k, e]) => [k, e]));
 
 /* Mode cuisine : un emoji selon l'action principale de l'étape. */
 const STEP_EMOJIS = [
@@ -538,10 +527,6 @@ select.input { appearance: auto; }
 .store-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 4px; }
 .store-pick .lbl { font-size: 13px; color: var(--fm-text2); display: inline-flex; align-items: center; gap: 4px; }
 
-/* Bibliothèque */
-.lib-hero { display: flex; gap: 14px; align-items: center; background: linear-gradient(135deg, color-mix(in srgb, #43a047 16%, var(--fm-card)), color-mix(in srgb, #22b8a7 12%, var(--fm-card))); }
-.lib-hero .big { font-size: 44px; }
-.lib-hero h3 { margin: 0 0 4px; }
 .lib-card { display: flex; gap: 12px; align-items: center; padding: 10px; margin-bottom: 8px; width: 100%; text-align: left;
   background: var(--fm-card); border: 1px solid var(--fm-divider); border-radius: var(--fm-radius); }
 .lib-card .thumb { font-size: 32px; }
@@ -1009,9 +994,7 @@ class FrigoMalinPanel extends HTMLElement {
       week: { start: mondayOf(new Date()), entries: [], loading: false },
       list: { items: [], loaded: false, error: null, quick: "", showDone: false, menuWeek: "this", menu: null },
       suggestions: [],
-      recipesView: "mine",
       fridgeMemory: { items: [], updated: null, days: 5 },
-      library: { loaded: false, loading: false, recipes: [], theme: "", type: "", search: "", fitHousehold: true, seasonOnly: false, ideas: [], ideasLoading: false, error: null },
       stack: [],
       toast: null,
     };
@@ -1349,10 +1332,6 @@ class FrigoMalinPanel extends HTMLElement {
     }
     if (path.startsWith("fridge.ingredients.")) this._syncFridgeMemory();
     if (path.startsWith("top.draft.")) this._settingsDirtyCheck();
-    if (el.dataset.live === "library") {
-      const list = this.shadowRoot.getElementById("lib-list");
-      if (list) list.innerHTML = this._tplLibItems();
-    }
   }
 
   async _onChange(ev) {
@@ -1721,10 +1700,12 @@ class FrigoMalinPanel extends HTMLElement {
       case "home-quick":
         this._setHomeQuick(!s.home.quick);
         return;
+      case "home-jow":
+        this._dispatch("tab", { dataset: { tab: "recipes" } });
+        this._dispatch("import-open", { dataset: {} });
+        return;
       case "home-go":
         if (d.store) this._pickStore(d.store);
-        if (d.view) s.recipesView = d.view;
-        if (d.view === "library") this._loadLibrary();
         this._dispatch("tab", { dataset: { tab: d.tab } });
         return;
       case "memory-photo":
@@ -2099,38 +2080,6 @@ class FrigoMalinPanel extends HTMLElement {
         if (deleted) this._render();
         return;
       }
-      case "recipes-view":
-        s.recipesView = d.value;
-        if (d.value === "library") this._loadLibrary();
-        this._render();
-        this.shadowRoot.querySelector("main")?.scrollTo(0, 0);
-        return;
-      case "lib-theme":
-        s.library.theme = d.value;
-        this._render();
-        return;
-      case "lib-type":
-        s.library.type = d.value;
-        this._render();
-        return;
-      case "lib-open": {
-        const r = s.library.recipes.find((x) => x.id === d.id);
-        if (!r) return;
-        const saved = this._libRecipeInCarnet(r);
-        if (saved) s.stack.push({ type: "recipe", id: saved.id, servings: this.defaultServings, confirmDelete: false });
-        else s.stack.push({ type: "recipe", draft: clone(r), servings: this.defaultServings });
-        this._renderOverlay();
-        return;
-      }
-      case "lib-idea-open": {
-        const r = s.library.ideas[Number(d.i)];
-        if (r) s.stack.push({ type: "recipe", draft: clone(r), servings: this.defaultServings });
-        this._renderOverlay();
-        return;
-      }
-      case "lib-ideas":
-        this._libIdeas();
-        return;
       case "filter":
         s.filter = d.value;
         this._render();
@@ -3582,7 +3531,7 @@ class FrigoMalinPanel extends HTMLElement {
       ["camera-outline", COLORS.teal, "Photo du frigo", `data-action="pick-photo" data-input="home-cam"`],
       ["creation", COLORS.indigo, "Planifier la semaine", `data-action="weekplan-open" data-rolling="1"`],
       ["cart-plus", COLORS.green, "Ajout rapide", this.listEntity ? `data-action="home-quick" id="home-quick-tile"` : `data-action="home-go" data-tab="shopping"`],
-      ["bookshelf", COLORS.orange, "Bibliothèque", `data-action="home-go" data-tab="recipes" data-view="library"`],
+      ["download", COLORS.orange, "Recettes Jow", `data-action="home-jow"`],
     ];
 
     const meal = next
@@ -4463,144 +4412,11 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   _tplRecipes() {
-    const view = this.s.recipesView;
-    const switcher = `<div class="segmented" style="margin-bottom:14px">
-        <button class="${view === "mine" ? "on" : ""}" data-action="recipes-view" data-value="mine">📖 Mon carnet${this.s.recipes.length ? ` (${this.s.recipes.length})` : ""}</button>
-        <button class="${view === "library" ? "on" : ""}" data-action="recipes-view" data-value="library">🌿 Bibliothèque</button>
-      </div>`;
-    if (view === "library") return switcher + this._tplLibrary();
-    return switcher + this._tplMyRecipes();
+    return this._tplMyRecipes();
   }
-
-  /* ---------------- bibliothèque */
 
   get householdAllergens() {
     return new Set(this.settings.members.flatMap((m) => m.allergies));
-  }
-
-  _libRecipeInCarnet(r) {
-    return this.s.recipes.find((x) => x.library_id && x.library_id === r.library_id);
-  }
-
-  _libFiltered() {
-    const L = this.s.library;
-    const month = new Date().getMonth() + 1;
-    const q = foldText(L.search).trim();
-    const allergens = this.householdAllergens;
-    return L.recipes.filter((r) => {
-      if (L.theme && !r.themes.includes(L.theme)) return false;
-      if (L.type && r.type !== L.type) return false;
-      if (L.seasonOnly && !r.months.includes(month)) return false;
-      if (L.fitHousehold && r.allergens.some((a) => allergens.has(a))) return false;
-      if (q && !foldText(r.title + " " + r.ingredients.map((i) => i.name).join(" ")).includes(q)) return false;
-      return true;
-    });
-  }
-
-  _tplLibCard(r, action, extra = "") {
-    const month = new Date().getMonth() + 1;
-    const allergens = this.householdAllergens;
-    const conflicts = (r.allergens || []).filter((a) => allergens.has(a));
-    const time = totalTime(r);
-    const inCarnet = r.library_id && this._libRecipeInCarnet(r);
-    const seasonal = r.months && r.months.length < 12 && r.months.includes(month);
-    const themes = (r.themes || []).filter((t) => t !== "gluten_free" && t !== "quick").slice(0, 2);
-    return `<button class="lib-card" data-action="${action}" ${extra}>
-      ${safeUrl(r.image) ? `<img class="thumb" src="${esc(safeUrl(r.image))}" alt="" loading="lazy">` : `<div class="thumb" style="background:hsl(${hashHue(r.title)} 60% 50% / .15)">${r.emoji || emojiFor(r.title)}</div>`}
-      <div class="grow">
-        <div class="t">${esc(r.title)}</div>
-        <div class="m">${[time ? fmtMinutes(time) : "", r.servings ? `${r.servings} pers.` : "", nutBadge(r)].filter(Boolean).join(" · ")}</div>
-        <div class="badges">
-          ${seasonal ? `<span class="tag season">🍂 De saison</span>` : ""}
-          ${themes.map((t) => `<span class="tag">${THEME_ICON[t] || ""} ${esc(LIB_THEMES.find((x) => x[0] === t)[2])}</span>`).join("")}
-          ${(r.benefits || []).length && !themes.length ? `<span class="tag alt">💚 ${esc(r.benefits[0])}</span>` : ""}
-          ${conflicts.length ? `<span class="tag warn">⚠️ ${esc(conflicts.map((a) => HH.allergens[a]).join(", "))}</span>` : ""}
-        </div>
-      </div>
-      ${inCarnet ? `<span class="in" title="Dans votre carnet">${icon("check-circle")}</span>` : icon("chevron-right")}
-    </button>`;
-  }
-
-  _tplLibItems() {
-    const L = this.s.library;
-    if (L.error) return `<div class="alert">${esc(L.error)}</div>`;
-    if (!L.loaded) return `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`;
-    const list = this._libFiltered();
-    const hidden = L.fitHousehold ? L.recipes.filter((r) => r.allergens.some((a) => this.householdAllergens.has(a))).length : 0;
-    let html = list.length
-      ? list.map((r) => this._tplLibCard(r, "lib-open", `data-id="${esc(r.id)}"`)).join("")
-      : `<div class="empty"><div class="emoji">🔍</div><p>Aucune recette ne correspond. Essayez un autre thème, ou demandez des idées à l'IA ci-dessous.</p></div>`;
-    if (hidden) html += `<p class="muted small" style="text-align:center">${hidden} recette${hidden > 1 ? "s" : ""} masquée${hidden > 1 ? "s" : ""} à cause des allergies du foyer.</p>`;
-    return html;
-  }
-
-  _tplLibrary() {
-    const L = this.s.library;
-    const themeLabel = L.theme ? LIB_THEMES.find((t) => t[0] === L.theme)[2] : "";
-    const hasAllergies = this.householdAllergens.size > 0;
-    return `
-      <div class="card lib-hero">
-        <span class="big">🥗</span>
-        <div class="grow">
-          <h3>Recettes saines</h3>
-          <div class="muted small">Équilibrées, anti-inflammatoires, de saison et gourmandes. Touchez une recette pour la découvrir, puis ajoutez-la à votre carnet.</div>
-        </div>
-      </div>
-      <div class="search">
-        ${icon("magnify")}
-        <input class="input" type="search" placeholder="Chercher (ex. : lentilles, saumon…)" value="${esc(L.search)}" data-model="library.search" data-live="library">
-      </div>
-      <div class="chips scroll" style="margin-bottom:8px">
-        <button class="chip ${!L.theme ? "on" : ""}" data-action="lib-theme" data-value="">✨ Tout</button>
-        ${LIB_THEMES.map(([k, e, label]) => `<button class="chip ${L.theme === k ? "on" : ""}" data-action="lib-theme" data-value="${k}">${e} ${label}</button>`).join("")}
-      </div>
-      <div class="chips scroll" style="margin-bottom:8px">
-        <button class="chip ${!L.type ? "on" : ""}" data-action="lib-type" data-value="">Tous les repas</button>
-        ${LIB_TYPES.map(([k, e, label]) => `<button class="chip ${L.type === k ? "on" : ""}" data-action="lib-type" data-value="${k}">${e} ${label}</button>`).join("")}
-      </div>
-      <div class="chips" style="margin-bottom:12px">
-        <button class="chip ${L.seasonOnly ? "on" : ""}" data-action="toggle-bool" data-path="library.seasonOnly">🍂 De saison</button>
-        ${hasAllergies ? `<button class="chip ${L.fitHousehold ? "on" : ""}" data-action="toggle-bool" data-path="library.fitHousehold">👨‍👩‍👧 Sans les allergènes du foyer</button>` : ""}
-      </div>
-      <div id="lib-list">${this._tplLibItems()}</div>
-
-      <div class="set-sec">${bubble("creation", COLORS.purple)}<h3>Encore plus d'idées</h3></div>
-      <p class="muted small" style="margin-top:0">L'IA invente de nouvelles recettes${themeLabel ? ` « ${esc(themeLabel.toLowerCase())} »` : " saines"}, de saison et adaptées à votre foyer.</p>
-      ${L.ideas.map((r, i) => this._tplLibCard(r, "lib-idea-open", `data-i="${i}"`)).join("")}
-      <button class="btn tonal block" data-action="lib-ideas" ${L.ideasLoading ? "disabled" : ""}>${L.ideasLoading ? `<span class="spinner sm"></span> L'IA cuisine des idées…` : `${icon("creation")} ${L.ideas.length ? "D'autres idées" : "4 nouvelles idées"}${themeLabel ? ` « ${esc(themeLabel)} »` : ""}`}</button>
-      ${this._tplVersion()}`;
-  }
-
-  async _loadLibrary() {
-    const L = this.s.library;
-    if (L.loaded || L.loading) return;
-    L.loading = true;
-    try {
-      const res = await this._ws("library/list");
-      L.recipes = res.recipes;
-      L.loaded = true;
-      L.error = null;
-    } catch (err) {
-      L.error = this._err(err);
-      L.loaded = true;
-    }
-    L.loading = false;
-    if (this.s.tab === "recipes" && this.s.recipesView === "library") this._render();
-  }
-
-  async _libIdeas() {
-    const L = this.s.library;
-    L.ideasLoading = true;
-    this._render();
-    try {
-      const res = await this._ws("library/ideas", { theme: L.theme || "", dish_type: L.type || "", count: 4 });
-      L.ideas = [...res.recipes, ...L.ideas].slice(0, 12);
-      if (!res.recipes.length) this._toast("Pas de nouvelle idée cette fois, réessayez.", true);
-    } catch (err) {
-      this._toast(this._err(err), true);
-    }
-    L.ideasLoading = false;
-    this._render();
   }
 
   _tplMyRecipes() {
@@ -4866,7 +4682,7 @@ class FrigoMalinPanel extends HTMLElement {
     const footer = `
       <button class="btn tonal grow" data-action="plan-open">${icon("calendar-plus")} Planifier</button>
       <button class="btn grow" data-action="cook" ${r.steps.length ? "" : "disabled"}>${icon("chef-hat")} Cuisiner</button>`;
-    return this._tplSheet(saved ? "Recette" : r.origin === "library" ? "Bibliothèque" : "Idée de recette", body, footer, star);
+    return this._tplSheet(saved ? "Recette" : "Idée de recette", body, footer, star);
   }
 
   _tplCook(top) {

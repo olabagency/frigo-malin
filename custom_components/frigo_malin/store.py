@@ -50,6 +50,13 @@ class _MigratingStore(Store[dict[str, Any]]):
             # 1.13.0 : mots-clés épurés (plus de noms d'ingrédients ni de bouts de titre).
             for recipe in data.get("recipes", []):
                 recipe["tags"] = clean_tags(recipe.get("tags") or [], recipe.get("title", ""), recipe.get("ingredients") or [])
+        if old_major_version == 1 and old_minor_version < 6:
+            # 1.15.0 : la bibliothèque est supprimée, avec les recettes qui en venaient (et leurs repas prévus).
+            removed = {
+                r["id"] for r in data.get("recipes", []) if r.get("library_id") or r.get("origin") == "library"
+            }
+            data["recipes"] = [r for r in data.get("recipes", []) if r["id"] not in removed]
+            data["plan"] = [e for e in data.get("plan", []) if e.get("recipe_id") not in removed]
         if old_major_version > STORAGE_VERSION:
             raise NotImplementedError("Données créées par une version plus récente de Frigo Malin")
         return data
