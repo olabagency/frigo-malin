@@ -7,6 +7,15 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.17.1] – 2026-11-10
+
+### Modifié
+
+- Accueil : **Mon frigo** et **Courses** sont maintenant côte à côte, en cartes compactes de même hauteur.
+  - Mon frigo : le nombre d'aliments, ceux à consommer vite, et le bouton « 💡 Des idées ».
+  - Courses : le nombre d'articles, les trois premiers, et « 🏪 Au magasin ».
+  - Toucher le titre d'une carte ouvre la page complète.
+
 ## [1.17.0] – 2026-11-10
 
 ### Ajouté

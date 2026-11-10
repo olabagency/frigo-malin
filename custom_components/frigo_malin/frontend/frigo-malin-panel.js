@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.17.0";
+const FM_VERSION = "1.17.1";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -804,6 +804,24 @@ nav.tabs button.plus.open { transform: rotate(45deg); }
 .home-quick > .inner { overflow: hidden; min-height: 0; }
 .home-quick .card { margin-bottom: 14px; }
 .home-quick .chip { min-height: 32px; padding: 0 10px; font-size: 13px; }
+/* Frigo et courses côte à côte */
+.home-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; align-items: stretch; }
+.home-duo.single { grid-template-columns: 1fr; }
+.home-duo > .card.duo { margin: 0; padding: 14px; display: flex; flex-direction: column; min-width: 0; }
+.duo-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0; margin-bottom: 10px; border: 0; background: none; color: var(--fm-text); font: inherit; text-align: left; cursor: pointer; }
+.duo-head h3 { margin: 0; flex: 1; font-size: 16px; white-space: nowrap; }
+.duo-head .bubble { width: 34px; height: 34px; }
+.duo-head > ha-icon { color: var(--fm-text2); --mdc-icon-size: 18px; }
+.duo-big { font-size: 30px; font-weight: 700; line-height: 1.1; }
+.duo-big small { font-size: 13px; font-weight: 500; color: var(--fm-text2); margin-left: 6px; }
+.duo-alert { margin: 6px 0 10px; padding: 6px 8px; border-radius: 10px; font-size: 13px; line-height: 1.35; background: color-mix(in srgb, var(--fm-warning) 16%, transparent); }
+.duo-ok { margin: 6px 0 10px; font-size: 13px; color: var(--fm-text2); }
+.duo-text { margin: 0 0 10px; }
+.duo-list { list-style: none; margin: 6px 0 10px; padding: 0; font-size: 13px; }
+.duo-list li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 0; }
+.duo-btn { margin-top: auto; min-height: 40px; font-size: 14px; padding: 0 8px; }
+@media (max-width: 330px) { .home-duo { grid-template-columns: 1fr; } }
+
 .home-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .home-head h3 { margin: 0; flex: 1; }
 .home-head .btn.text { min-height: 32px; padding: 0 6px; font-size: 14px; }
@@ -4259,13 +4277,15 @@ class FrigoMalinPanel extends HTMLElement {
 
     const mem = this.s.fridgeMemory;
     const urgent = mem.items.filter((i) => i.expires && daysLeft(i.expires) <= 2);
+    // Carte compacte (moitié de largeur, à côté des courses).
     const fridge = mem.items.length
-      ? `${urgent.length
-          ? `<div class="urgent" style="margin-top:0">⚠️ À consommer vite : ${urgent.map((i) => `<b>${esc(i.name)}</b> (${esc(expiryLabel(i.expires).replace(/^⚠️ |^⏳ /, ""))})`).join(", ")}</div>`
-          : `<p class="muted small" style="margin:0">✅ Rien ne presse : ${mem.items.length} aliment${mem.items.length > 1 ? "s" : ""} en mémoire.</p>`}
-        <button class="btn tonal block" style="margin-top:12px" data-action="memory-use">💡 Des idées avec ce qu'il me reste</button>`
-      : `<p class="muted" style="margin:0 0 12px">Prenez votre frigo en photo : je vous dis quoi cuisiner avec ce qu'il contient.</p>
-        <button class="btn tonal block" data-action="pick-photo" data-input="home-cam">${icon("camera")} Prendre une photo</button>`;
+      ? `<div class="duo-big">${mem.items.length}<small>aliment${mem.items.length > 1 ? "s" : ""}</small></div>
+        ${urgent.length
+          ? `<div class="duo-alert">⚠️ À consommer vite :<br><b>${urgent.slice(0, 3).map((i) => esc(i.name)).join(", ")}</b>${urgent.length > 3 ? ` +${urgent.length - 3}` : ""}</div>`
+          : `<div class="duo-ok">✅ Rien ne presse</div>`}
+        <button class="btn tonal block duo-btn" data-action="memory-use">💡 Des idées</button>`
+      : `<div class="duo-big">🧊</div><p class="muted small duo-text">Prenez-le en photo : je vous dis quoi cuisiner.</p>
+        <button class="btn tonal block duo-btn" data-action="pick-photo" data-input="home-cam">${icon("camera")} Photo</button>`;
 
 
     return `
@@ -4280,12 +4300,13 @@ class FrigoMalinPanel extends HTMLElement {
           <button class="btn text" data-action="home-go" data-tab="week">Semaine ${icon("chevron-right")}</button></div>
         ${this.s.home.loaded ? meal : skel("block")}
       </div>
-      <div class="card ${urgent.length ? "memory" : ""}">
-        <div class="home-head">${bubble("fridge-outline", COLORS.teal)}<h3>Mon frigo</h3>
-          <button class="btn text" data-action="home-go" data-tab="fridge">${mem.items.length ? "Voir" : "Ouvrir"} ${icon("chevron-right")}</button></div>
-        ${fridge}
+      <div class="home-duo ${this.listEntity ? "" : "single"}">
+        <div class="card duo ${urgent.length ? "memory" : ""}">
+          <button class="duo-head" data-action="home-go" data-tab="fridge">${bubble("fridge-outline", COLORS.teal)}<h3>Mon frigo</h3>${icon("chevron-right")}</button>
+          ${fridge}
+        </div>
+        ${this.listEntity ? `<div class="card duo" id="home-shopping">${this._tplHomeShopping()}</div>` : ""}
       </div>
-      ${this.listEntity ? `<div class="card" id="home-shopping">${this._tplHomeShopping()}</div>` : ""}
       ${this._tplVersion()}`;
   }
 
@@ -4318,18 +4339,18 @@ class FrigoMalinPanel extends HTMLElement {
   _tplHomeShopping() {
     const pending = this.pendingItems;
     const stores = this.settings.stores || [];
-    return `<div class="home-head">${bubble("cart-outline", COLORS.green)}<h3>Courses</h3>
-          <span class="count">${pending.length ? `${pending.length} article${pending.length > 1 ? "s" : ""}` : "✅ Tout est pris"}</span></div>
+    // Carte compacte (moitié de largeur, à côté du frigo).
+    return `<button class="duo-head" data-action="home-go" data-tab="shopping">${bubble("cart-outline", COLORS.green)}<h3>Courses</h3>${icon("chevron-right")}</button>
         ${pending.length
-          ? `<div class="chips" style="margin-bottom:12px">${pending
-              .slice(0, 8)
-              .map((i) => `<span class="chip">${ingEmoji(i.summary)} ${esc(i.summary)}</span>`)
-              .join("")}${pending.length > 8 ? `<span class="chip">+${pending.length - 8}</span>` : ""}</div>`
-          : `<p class="muted small" style="margin:0 0 12px">La liste est vide.</p>`}
-        <div class="row" style="gap:8px">
-          <button class="btn tonal grow" data-action="home-go" data-tab="shopping">${icon("format-list-checks")} Voir la liste</button>
-          ${stores.length && pending.length ? `<button class="btn tonal grow" data-action="store-mode" data-store="${esc(stores[0].id)}">🏪 Au magasin</button>` : ""}
-        </div>`;
+          ? `<div class="duo-big">${pending.length}<small>article${pending.length > 1 ? "s" : ""}</small></div>
+            <ul class="duo-list">${pending
+              .slice(0, 3)
+              .map((i) => `<li>${ingEmoji(i.summary)} ${esc(i.summary)}</li>`)
+              .join("")}${pending.length > 3 ? `<li class="muted">+ ${pending.length - 3} autre${pending.length - 3 > 1 ? "s" : ""}</li>` : ""}</ul>`
+          : `<div class="duo-big">✅</div><div class="duo-ok">Tout est pris</div>`}
+        ${stores.length && pending.length
+          ? `<button class="btn tonal block duo-btn" data-action="store-mode" data-store="${esc(stores[0].id)}">🏪 Au magasin</button>`
+          : `<button class="btn tonal block duo-btn" data-action="home-go" data-tab="shopping">${icon("format-list-checks")} La liste</button>`}`;
   }
 
   _tplFridge() {
