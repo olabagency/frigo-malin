@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.17.1";
+const FM_VERSION = "1.17.2";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -870,7 +870,29 @@ nav.tabs button.plus.open { transform: rotate(45deg); }
 .fz-add select.input { flex: 0 0 112px; width: 112px; padding: 0 4px 0 10px; }
 .linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--fm-primary); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .icon-btn.on { color: var(--fm-primary); background: var(--fm-soft); }
-.fridge-photo { width: 100%; border-radius: 16px; display: block; }
+/* Visionneuse plein écran */
+.lightbox { position: absolute; inset: 0; z-index: 30; background: #000; display: flex; flex-direction: column; animation: fade .15s ease-out; }
+.lb-close { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 12px; z-index: 2; width: 46px; height: 46px; border-radius: 50%; border: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); color: #fff; box-shadow: 0 0 0 1px rgba(255,255,255,.25); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); cursor: pointer; }
+.lb-close ha-icon { --mdc-icon-size: 26px; }
+.lb-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: zoom-in; }
+.lb-stage img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-select: none; }
+.lb-stage.zoom { display: block; overflow: auto; cursor: zoom-out; -webkit-overflow-scrolling: touch; }
+.lb-stage.zoom img { max-width: none; max-height: none; width: 250%; }
+.lb-stage .spinner { border-color: rgba(255,255,255,.25); border-top-color: #fff; }
+.lb-msg { color: #fff; padding: 24px; text-align: center; }
+.lb-foot { padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.lb-dots { display: flex; gap: 8px; }
+.lb-dots button { border: 1px solid rgba(255,255,255,.4); background: none; color: #fff; border-radius: 16px; padding: 6px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+.lb-dots button.on { background: #fff; color: #000; }
+.lb-hint { color: rgba(255,255,255,.65); font-size: 13px; }
+.mem-thumb { position: relative; flex-shrink: 0; width: 56px; height: 56px; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: var(--fm-soft); color: var(--fm-primary); display: flex; align-items: center; justify-content: center; cursor: zoom-in; }
+.mem-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mem-thumb-zoom { position: absolute; right: 3px; bottom: 3px; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); color: #fff; }
+.mem-thumb-zoom ha-icon { --mdc-icon-size: 13px; }
+.photo-wrap { position: relative; }
+.photo-wrap .photo { cursor: zoom-in; }
+.photo-zoom { position: absolute; right: 10px; bottom: 10px; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.45); color: #fff; pointer-events: none; }
+.photo-zoom ha-icon { --mdc-icon-size: 18px; }
 
 /* Frigo dessiné */
 .fridge-box { margin: 12px 0; border: 2px solid var(--fm-divider); border-radius: 18px; overflow: hidden; background: color-mix(in srgb, #22b8a7 4%, var(--fm-card)); }
@@ -1781,6 +1803,7 @@ class FrigoMalinPanel extends HTMLElement {
       this._dispatch(ev.target.dataset.enter, ev.target, ev);
     }
     if (ev.key === "Escape" && this._confirmResolve) return this._closeDialog(null);
+    if (ev.key === "Escape" && this._lightbox) return this._closeLightbox();
     if (ev.key === "Escape" && this.s.home.quick) return this._setHomeQuick(false);
     if (ev.key === "Escape" && this.s.list.editing) {
       this.s.list.editing = null;
@@ -2191,6 +2214,33 @@ class FrigoMalinPanel extends HTMLElement {
       case "memory-photo":
         this._showFridgePhoto(d.i != null ? Number(d.i) : null);
         return;
+      case "lightbox-close":
+        this._closeLightbox();
+        return;
+      case "lightbox-open":
+        this._openImage(s.fridge.photo);
+        return;
+      case "lightbox-zoom": {
+        const box = this._lightbox;
+        if (!box || !box.image) return;
+        // Zoom à l'endroit touché, puis on se déplace en faisant glisser la photo.
+        const rect = el.getBoundingClientRect();
+        const fx = ev && ev.clientX != null ? (ev.clientX - rect.left) / rect.width : 0.5;
+        const fy = ev && ev.clientY != null ? (ev.clientY - rect.top) / rect.height : 0.5;
+        box.zoom = !box.zoom;
+        this._renderLightbox();
+        if (box.zoom) {
+          const stage = this.shadowRoot.querySelector(".lb-stage");
+          const img = stage && stage.querySelector("img");
+          const center = () => {
+            stage.scrollLeft = fx * stage.scrollWidth - stage.clientWidth / 2;
+            stage.scrollTop = fy * stage.scrollHeight - stage.clientHeight / 2;
+          };
+          if (img && img.complete) center();
+          else if (img) img.onload = center;
+        }
+        return;
+      }
       case "memory-edit":
         s.fridgeEdit = !s.fridgeEdit;
         this._render();
@@ -4081,7 +4131,7 @@ class FrigoMalinPanel extends HTMLElement {
     }
     requestAnimationFrame(() => this._fitHeight());
     if (!root.querySelector(".app")) {
-      root.innerHTML = `<style>${STYLES}</style><div class="app"><div id="header"></div><main id="main"></main><nav class="tabs" id="nav"></nav><div id="plus"></div><input class="hidden-input" id="plus-cam" type="file" accept="image/*" capture="environment" data-change="photo"><div id="overlay"></div><div id="toast"></div><div id="dialog"></div></div>`;
+      root.innerHTML = `<style>${STYLES}</style><div class="app"><div id="header"></div><main id="main"></main><nav class="tabs" id="nav"></nav><div id="plus"></div><input class="hidden-input" id="plus-cam" type="file" accept="image/*" capture="environment" data-change="photo"><div id="overlay"></div><div id="lightbox"></div><div id="toast"></div><div id="dialog"></div></div>`;
     }
     const main = root.getElementById("main");
     const scroll = main.scrollTop;
@@ -4383,7 +4433,7 @@ class FrigoMalinPanel extends HTMLElement {
     if (f.step === "detecting") {
       return `${inputs}
         <div class="photo-wrap">
-          <img class="photo" src="${esc(f.photo)}" alt="">
+          <img class="photo" src="${esc(f.photo)}" alt="" data-action="lightbox-open">
           <div class="scan"><div class="spinner"></div><div>Je regarde ce qu'il y a dans votre frigo…</div></div>
         </div>`;
     }
@@ -4413,7 +4463,7 @@ class FrigoMalinPanel extends HTMLElement {
     // review
     return `${inputs}
       ${f.error ? `<div class="alert">${esc(f.error)}</div>` : ""}
-      ${f.photo ? `<div class="photo-wrap"><img class="photo" src="${esc(f.photo)}" alt="Photo du frigo"></div>` : ""}
+      ${f.photo ? `<div class="photo-wrap"><img class="photo" src="${esc(f.photo)}" alt="Photo du frigo" data-action="lightbox-open"><span class="photo-zoom">${icon("arrow-expand")}</span></div>` : ""}
       <div class="card">
         <div class="row" style="margin-bottom:4px">
           ${bubble("basket-outline", COLORS.green)}
@@ -5094,29 +5144,89 @@ class FrigoMalinPanel extends HTMLElement {
     this._render();
   }
 
+  /* ---------------- visionneuse plein écran (photo du frigo) */
+
   async _showFridgePhoto(index = null) {
     const count = this.s.fridgeMemory.photos || 0;
     if (!count) return;
     const i = index == null ? count - 1 : index;
-    const top = { type: "fridge-photo", index: i, count, image: null };
-    if (this.top && this.top.type === "fridge-photo") this.s.stack[this.s.stack.length - 1] = top;
-    else this.s.stack.push(top);
-    this._renderOverlay();
+    const box = { index: i, count, image: null, zoom: false };
+    this._lightbox = box;
+    // La dernière photo est déjà chargée pour la vignette : affichage immédiat.
+    if (i === count - 1 && this._fridgeThumb) {
+      box.image = this._fridgeThumb;
+      this._renderLightbox();
+      return;
+    }
+    this._renderLightbox();
     try {
       const res = await this._ws("fridge/memory/photo", { index: i });
-      top.image = `data:${res.mime};base64,${res.image}`;
+      box.image = `data:${res.mime};base64,${res.image}`;
     } catch (err) {
-      top.error = this._err(err);
+      box.error = this._err(err);
     }
-    if (this.top === top) this._renderOverlay();
+    if (this._lightbox === box) this._renderLightbox();
   }
 
-  _tplFridgePhoto(top) {
-    const body = `
-      ${top.count > 1 ? `<div class="segmented" style="margin-bottom:12px">${Array.from({ length: top.count }, (_, i) => `<button class="${i === top.index ? "on" : ""}" data-action="memory-photo" data-i="${i}">Photo ${i + 1}</button>`).join("")}</div>` : ""}
-      ${top.error ? `<div class="alert">${esc(top.error)}</div>` : top.image ? `<img class="fridge-photo" src="${top.image}" alt="Photo du frigo">` : `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`}
-      <p class="muted small">La photo est gardée tant que le contenu du frigo est mémorisé ; elle est effacée avec « Oublier ».</p>`;
-    return this._tplSheet("Photo du frigo", body);
+  /* Vignette de la dernière photo du frigo, chargée une fois (et réutilisée par la visionneuse). */
+  _tplFridgeThumb() {
+    const mem = this.s.fridgeMemory;
+    const key = `${mem.updated}|${mem.photos}`;
+    if (this._thumbKey !== key) queueMicrotask(() => this._loadFridgeThumb());
+    return `<button class="mem-thumb" data-action="memory-photo" aria-label="Voir la photo du frigo en grand">
+      ${this._fridgeThumb && this._thumbKey === key ? `<img src="${this._fridgeThumb}" alt="">` : icon("image-outline")}
+      <span class="mem-thumb-zoom">${icon("arrow-expand")}</span>
+    </button>`;
+  }
+
+  async _loadFridgeThumb() {
+    const mem = this.s.fridgeMemory;
+    const key = `${mem.updated}|${mem.photos}`;
+    if (!mem.photos || this._thumbKey === key) return;
+    this._thumbKey = key;
+    this._fridgeThumb = null;
+    try {
+      const res = await this._ws("fridge/memory/photo", { index: mem.photos - 1 });
+      if (this._thumbKey === key) this._fridgeThumb = `data:${res.mime};base64,${res.image}`;
+    } catch (_) {
+      /* pas de vignette */
+    }
+    if (this.s.tab === "fridge") this._render();
+  }
+
+  _openImage(src) {
+    if (!src) return;
+    this._lightbox = { index: 0, count: 1, image: src, zoom: false };
+    this._renderLightbox();
+  }
+
+  _closeLightbox() {
+    this._lightbox = null;
+    this._renderLightbox();
+  }
+
+  _renderLightbox() {
+    const host = this.shadowRoot.getElementById("lightbox");
+    if (!host) return;
+    const box = this._lightbox;
+    if (!box) {
+      host.innerHTML = "";
+      return;
+    }
+    host.innerHTML = `<div class="lightbox" role="dialog" aria-modal="true" aria-label="Photo du frigo">
+      <button class="lb-close" data-action="lightbox-close" aria-label="Fermer">${icon("close")}</button>
+      <div class="lb-stage ${box.zoom ? "zoom" : ""}" data-action="lightbox-zoom">
+        ${box.error
+          ? `<div class="lb-msg">${esc(box.error)}</div>`
+          : box.image
+            ? `<img src="${box.image}" alt="Photo du frigo" draggable="false">`
+            : `<div class="spinner"></div>`}
+      </div>
+      <div class="lb-foot">
+        ${box.count > 1 ? `<div class="lb-dots">${Array.from({ length: box.count }, (_, k) => `<button class="${k === box.index ? "on" : ""}" data-action="memory-photo" data-i="${k}">Photo ${k + 1}</button>`).join("")}</div>` : ""}
+        ${box.image ? `<div class="lb-hint">${box.zoom ? "Touchez pour revenir à la photo entière" : "Touchez la photo pour zoomer"}</div>` : ""}
+      </div>
+    </div>`;
   }
 
   _tplFridgeMemory() {
@@ -5127,7 +5237,7 @@ class FrigoMalinPanel extends HTMLElement {
     const urgent = mem.items.filter((i) => i.expires && daysLeft(i.expires) <= 2);
     return `<div class="card memory">
       <div class="row" style="align-items:flex-start">
-        ${bubble("fridge-outline", COLORS.teal)}
+        ${mem.photos ? this._tplFridgeThumb() : bubble("fridge-outline", COLORS.teal)}
         <div class="grow">
           <h3 style="margin:0">Dans mon frigo</h3>
           <div class="muted small">${mem.items.length} aliment${mem.items.length > 1 ? "s" : ""} · ${mem.photos ? `<button class="linkish" data-action="memory-photo">📷 photo ${when}</button>` : `photo ${when}`}${mem.days ? ` · gardé ${mem.days} jours` : ""}</div>
@@ -5406,8 +5516,6 @@ class FrigoMalinPanel extends HTMLElement {
         return this._tplEditor(top);
       case "import":
         return this._tplImport(top);
-      case "fridge-photo":
-        return this._tplFridgePhoto(top);
       case "plan":
         return this._tplPlan(top);
       case "pick":

@@ -7,6 +7,16 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.17.2] – 2026-11-10
+
+### Modifié
+
+- 📷 **Photo du frigo en plein écran** : la vignette de la photo s'affiche dans « Dans mon frigo » à la place de l'icône.
+  - Un appui sur la vignette (ou sur « photo aujourd'hui ») ouvre la photo en grand sur fond noir, et la croix en haut à droite la referme.
+  - Toucher la photo zoome à l'endroit touché ; on se déplace en faisant glisser, et un nouvel appui revient à la photo entière.
+  - Avec plusieurs photos (frigo + placard), des boutons « Photo 1 / Photo 2 » permettent de passer de l'une à l'autre.
+- La photo affichée pendant l'analyse s'ouvre aussi en plein écran au toucher.
+
 ## [1.17.1] – 2026-11-10
 
 ### Modifié
