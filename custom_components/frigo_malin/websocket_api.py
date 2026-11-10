@@ -43,6 +43,10 @@ from .importer import RecipeImportError, async_fetch_text, async_import_recipe
 from .jow import SITEMAP_URL, JowCatalog
 from .jow import browse as jow_browse
 from .household import household_context, household_servings
+from .purchases import habits as purchase_habits
+from .purchases import history as purchase_history
+from .purchases import suggestions as purchase_suggestions
+from .stats import meal_stats
 from .nutrition import clean_food, compute, food_key, unknown_names, with_nutrition
 from .parsing import (
     aggregate_shopping,
@@ -212,6 +216,9 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_shopping_preview,
         ws_shopping_add,
         ws_shopping_suggestions,
+        ws_shopping_history,
+        ws_purchase_delete,
+        ws_stats_meals,
         ws_settings_save,
         ws_recipes_from_photo,
         ws_plan_generate,
@@ -762,8 +769,43 @@ async def ws_shopping_add(hass: HomeAssistant, connection: websocket_api.ActiveC
 def ws_shopping_suggestions(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Articles souvent ajoutés à la main, pour l'ajout rapide."""
-    connection.send_result(msg["id"], {"suggestions": _data(hass).store.shopping_suggestions(msg["limit"])})
+    """Ajout rapide : ce qui devrait être racheté, puis les articles habituels."""
+    store = _data(hass).store
+    items = purchase_suggestions(store.purchases, store.shopping_history, dt_util.now(), msg["limit"])
+    connection.send_result(msg["id"], {"suggestions": items})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "frigo_malin/shopping/history", vol.Optional("days"): vol.Any(None, vol.All(int, vol.Range(min=1)))}
+)
+@callback
+def ws_shopping_history(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Historique des achats (articles cochés), chiffres et habitudes."""
+    store = _data(hass).store
+    now = dt_util.now()
+    result = purchase_history(store.purchases, now, msg.get("days"))
+    result["habits"] = purchase_habits(store.purchases, now, 20)
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "frigo_malin/shopping/purchase/delete", vol.Required("name"): str, vol.Required("at"): str}
+)
+@callback
+def ws_purchase_delete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    _data(hass).store.remove_purchase(shopping_key(msg["name"]), msg["at"])
+    connection.send_result(msg["id"], {})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "frigo_malin/stats/meals", vol.Optional("period", default="week"): vol.In(["week", "month", "year"])}
+)
+@callback
+def ws_stats_meals(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Calories et macros mangées (menu passé), plats et aliments les plus fréquents."""
+    store = _data(hass).store
+    result = meal_stats(list(store.plan.values()), store.recipes, store.foods, dt_util.now().date(), msg["period"])
+    connection.send_result(msg["id"], result)
 
 
 # ---------------------------------------------------------------------- réglages du foyer

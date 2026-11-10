@@ -7,6 +7,27 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.19.0] – 2026-11-10
+
+### Ajouté
+
+- 📊 **Statistiques sur l'accueil**, sous « Mon frigo » et « Courses » :
+  calories et macronutriments jour par jour (graphique empilé protéines /
+  glucides / lipides, jours prévus en plus clair, moyenne en pointillés),
+  moyenne par jour et par personne, plats et ingrédients les plus mangés.
+  Au choix : semaine, 30 jours ou 12 mois. Touchez une barre pour le détail.
+- 🧾 **Historique des courses** (bouton 🕘 dans l'onglet Courses) : chaque
+  article coché, dans l'app, dans Home Assistant ou au magasin, est noté avec
+  sa date. Chiffres de la période, articles les plus achetés, frise par jour
+  (un achat noté par erreur se retire d'une touche).
+- 🔁 **Ajout rapide qui apprend** : Frigo Malin repère vos habitudes
+  (« des œufs tous les 6 jours environ ») et propose en premier ce qu'il est
+  temps de racheter, marqué 🔁.
+
+### Modifié
+
+- Glucides en jaune plus soutenu en thème clair, pour mieux se lire.
+
 ## [1.18.0] – 2026-11-10
 
 ### Ajouté

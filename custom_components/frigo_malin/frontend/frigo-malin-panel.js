@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.18.0";
+const FM_VERSION = "1.19.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -370,7 +370,8 @@ function skel(kind, n = 3) {
 }
 
 /* Macronutriments par portion (calculés par le serveur). */
-const NUT_COLORS = { protein: "#e53935", carbs: "#f9a825", fat: "#1e88e5", fiber: "#43a047" };
+// Glucides : jaune plus soutenu sur fond clair (lisibilité), jaune vif en thème sombre.
+const NUT_COLORS = { protein: "#e53935", carbs: "var(--fm-carbs)", fat: "#1e88e5", fiber: "#43a047" };
 function nutBadge(r) {
   const n = r && r.nutrition;
   if (!n || !n.kcal) return "";
@@ -418,6 +419,7 @@ const COLORS = {
 /* ------------------------------------------------------------------ styles */
 
 const STYLES = `
+:host([dark]) { --fm-carbs: #f9a825; }
 :host {
   --fm-primary: var(--primary-color, #03a9f4);
   --fm-on-primary: var(--text-primary-color, #fff);
@@ -434,6 +436,7 @@ const STYLES = `
   --fm-radius: var(--ha-card-border-radius, 12px);
   --fm-soft: color-mix(in srgb, var(--fm-primary) 12%, transparent);
   --fm-nav-h: 64px;
+  --fm-carbs: #e08a00;
   display: block;
   height: 100%;
   background: var(--fm-bg);
@@ -840,6 +843,94 @@ nav.tabs button.plus.open { transform: rotate(45deg); }
 .duo-list li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 0; }
 .duo-btn { margin-top: auto; min-height: 40px; font-size: 14px; padding: 0 8px; }
 @media (max-width: 330px) { .home-duo { grid-template-columns: 1fr; } }
+/* Statistiques (accueil) */
+.stats-card .home-head { margin-bottom: 8px; }
+.stats-periods { margin-bottom: 14px; }
+.stats-periods .chip { min-height: 32px; padding: 0 12px; font-size: 13px; }
+.stats-empty { text-align: center; padding: 6px 0 4px; }
+.stats-empty .emoji { font-size: 34px; }
+.sc { display: flex; gap: 6px; height: 150px; }
+.sc-y { display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: var(--fm-text2); padding-bottom: 18px; text-align: right; min-width: 28px; transform: translateY(-5px); }
+.sc-plot { position: relative; flex: 1; display: flex; align-items: stretch; gap: 6px; min-width: 0; }
+.sc-plot.month { gap: 2px; }
+.sc-plot.year { gap: 4px; }
+.sc-grid { position: absolute; inset: 0 0 18px 0; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+.sc-grid i { display: block; border-top: 1px solid var(--fm-divider); }
+.sc-grid i:last-child { border-top-color: color-mix(in srgb, var(--fm-text2) 50%, transparent); }
+.sc-avg { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--fm-text2); pointer-events: none; z-index: 2; margin-bottom: 18px; height: 0; }
+.sc-plot .sc-avg { bottom: 0; }
+.sc-avg span { position: absolute; right: 0; top: -17px; font-size: 10px; color: var(--fm-text2); background: var(--fm-card); padding: 0 4px; border-radius: 4px; }
+.sc-col { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 0; border: 0; background: none; cursor: pointer; font: inherit; color: var(--fm-text2); z-index: 1; }
+.sc-col::before { content: ""; position: absolute; inset: 0 -2px 16px; border-radius: 6px; background: transparent; transition: background .15s; }
+.sc-col.sel::before, .sc-col:hover::before { background: var(--fm-soft); }
+.sc-bar { position: relative; width: 100%; max-width: 30px; display: flex; flex-direction: column; gap: 2px; border-radius: 4px 4px 0 0; overflow: hidden; margin-bottom: 18px; transition: height .35s ease; }
+.sc-plot.month .sc-bar { gap: 1px; border-radius: 2px 2px 0 0; }
+.sc-bar i { display: block; min-height: 0; flex-basis: 0; }
+.sc-bar.planned { opacity: .38; }
+.sc-x { position: absolute; bottom: 0; height: 16px; font-size: 11px; line-height: 16px; white-space: nowrap; }
+.sc-plot.year .sc-x { font-size: 10px; }
+.sc-col.today .sc-x { color: var(--fm-primary); font-weight: 700; }
+.sc-col.sel .sc-x { color: var(--fm-text); font-weight: 600; }
+.sc-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; margin: 8px 0 0 34px; color: var(--fm-text); }
+.sc-legend > span { display: inline-flex; align-items: center; gap: 4px; }
+.dot.planned { background: var(--fm-text2); opacity: .38; }
+.sc-detail { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 10px 0 4px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--fm-text) 4%, transparent); font-size: 14px; min-height: 42px; }
+.sc-detail .big { font-size: 18px; }
+.sc-macros { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
+.sc-macros > span { display: inline-flex; align-items: center; gap: 4px; }
+.sc-tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--fm-soft); color: var(--fm-primary); }
+.st-title { font-weight: 600; margin: 16px 0 8px; }
+.st-tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.st-tile { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: 12px; border: 1px solid var(--fm-divider); min-width: 0; }
+.st-tile .lbl { font-size: 11px; color: var(--fm-text2); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-tile b { font-size: 18px; line-height: 1.2; }
+.st-tile b small { font-size: 11px; font-weight: 500; color: var(--fm-text2); }
+.st-tile > small { font-size: 11px; }
+@media (max-width: 560px) { .stats-card .st-tiles { grid-template-columns: repeat(4, 1fr); } .stats-card .st-tile:first-child { grid-column: span 4; flex-direction: row; align-items: baseline; gap: 8px; } }
+.st-sub { font-size: 12px; font-weight: 600; color: var(--fm-text2); text-transform: uppercase; letter-spacing: .04em; margin: 2px 0 6px; }
+.ph-tiles { grid-template-columns: repeat(4, 1fr); margin-bottom: 14px; }
+@media (max-width: 420px) { .ph-tiles { grid-template-columns: repeat(2, 1fr); } }
+.st-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 560px) { .st-cols { grid-template-columns: 1fr; } }
+.st-top { display: flex; flex-direction: column; gap: 4px; }
+.st-meal { display: flex; align-items: center; gap: 10px; padding: 4px; border: 0; border-radius: 10px; background: none; font: inherit; color: var(--fm-text); text-align: left; cursor: pointer; }
+.st-meal:hover { background: var(--fm-soft); }
+.st-meal .thumb { width: 38px; height: 38px; border-radius: 10px; font-size: 18px; flex-shrink: 0; }
+.st-meal .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.st-meal .rank { width: 16px; font-size: 12px; font-weight: 700; color: var(--fm-text2); text-align: center; }
+.cnt { font-size: 13px; font-weight: 600; color: var(--fm-text2); min-width: 24px; text-align: right; }
+.st-foods { display: flex; flex-direction: column; gap: 6px; }
+.st-food { display: grid; grid-template-columns: minmax(0, 1.2fr) 1fr auto; align-items: center; gap: 8px; font-size: 14px; }
+.st-food .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-food .track { height: 8px; border-radius: 4px; background: var(--fm-divider); overflow: hidden; }
+.st-food .track i { display: block; height: 100%; border-radius: 4px; background: var(--fm-primary); }
+.stats-hist { margin-top: 12px; }
+/* Historique des courses */
+.hist-open { margin-left: auto; }
+.list-head .hist-open + .sm-open { margin-left: 0; }
+.ph-card { padding: 12px 14px; }
+.ph-card .st-title { margin-top: 0; }
+.ph-habit { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--fm-divider); }
+.ph-habit:first-of-type { border-top: 0; }
+.ph-habit .nm { font-weight: 500; }
+.ph-gauge { display: block; height: 4px; border-radius: 2px; background: var(--fm-divider); margin-top: 6px; overflow: hidden; }
+.ph-gauge i { display: block; height: 100%; background: var(--fm-text2); border-radius: 2px; }
+.ph-habit.due .ph-gauge i { background: var(--fm-primary); }
+.badge-due, .badge-soon { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 8px; margin-left: 4px; vertical-align: 1px; }
+.badge-due { background: var(--fm-primary); color: var(--fm-on-primary); }
+.badge-soon { background: var(--fm-soft); color: var(--fm-primary); }
+.ph-add { color: var(--fm-primary); }
+.ph-there { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; --mdc-icon-size: 16px; }
+.ph-day { margin-bottom: 14px; }
+.ph-date { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.ph-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.ph-item { display: inline-flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; border-radius: 16px; background: var(--fm-card); border: 1px solid var(--fm-divider); font-size: 14px; }
+.ph-item small { color: var(--fm-text2); font-size: 11px; }
+.ph-del { display: inline-flex; border: 0; background: none; padding: 2px; border-radius: 50%; color: var(--fm-text2); cursor: pointer; --mdc-icon-size: 16px; }
+.ph-del:hover { background: var(--fm-soft); }
+.chip.due { border-color: color-mix(in srgb, var(--fm-primary) 55%, transparent); }
+.due-mark { font-size: 11px; }
+
 
 .home-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .home-head h3 { margin: 0; flex: 1; }
@@ -1186,6 +1277,8 @@ class FrigoMalinPanel extends HTMLElement {
       week: { start: mondayOf(new Date()), entries: [], loading: false },
       list: { items: [], loaded: false, error: null, quick: "", showDone: false, menuWeek: "this", menu: null },
       suggestions: [],
+      dueNames: new Set(),
+      stats: { period: "week", data: null, loading: false, sel: null },
       fridgeMemory: { items: [], updated: null, days: 5 },
       stack: [],
       toast: null,
@@ -1239,6 +1332,7 @@ class FrigoMalinPanel extends HTMLElement {
     const first = !this._hass;
     const wasConnected = this._hass ? this._hass.connected !== false : true;
     this._hass = hass;
+    this.toggleAttribute("dark", !!(hass.themes && hass.themes.darkMode));
     if (first) this._init();
     else if (hass.connected !== false && !wasConnected) {
       // Retour du réseau : on envoie les changements de la liste faits hors connexion.
@@ -1618,8 +1712,10 @@ class FrigoMalinPanel extends HTMLElement {
     try {
       const res = await this._ws("shopping/suggestions", { limit: 16 });
       this.s.suggestions = res.suggestions.map((x) => x.name);
+      this.s.dueNames = new Set(res.suggestions.filter((x) => x.due).map((x) => foldText(x.name).trim()));
     } catch (_) {
       this.s.suggestions = [];
+      this.s.dueNames = new Set();
     }
     this._renderListParts();
   }
@@ -2338,11 +2434,50 @@ class FrigoMalinPanel extends HTMLElement {
       }
       case "quick-chip":
         await this._quickAdd([d.name]);
+        if (this.top && this.top.type === "purchases") this._renderOverlay();
         return;
+      case "stats-period":
+        s.stats.period = d.value;
+        s.stats.sel = null;
+        this._loadStats();
+        return;
+      case "stats-day":
+        s.stats.sel = Number(d.i);
+        this._renderStats();
+        return;
+      case "purchases-open":
+        s.stack.push({ type: "purchases", days: 30, data: null, loading: true });
+        this._renderOverlay();
+        this._loadPurchases();
+        return;
+      case "purchases-days":
+        this.top.days = d.value ? Number(d.value) : null;
+        this.top.loading = true;
+        this._renderOverlay();
+        this._loadPurchases();
+        return;
+      case "purchase-delete": {
+        const top = this.top;
+        try {
+          await this._ws("shopping/purchase/delete", { name: d.name, at: d.at });
+        } catch (err) {
+          this._toast(this._err(err), true);
+          return;
+        }
+        this._toast("Achat retiré de l'historique");
+        if (top && top.type === "purchases") this._loadPurchases();
+        this._loadSuggestions();
+        return;
+      }
       case "list-toggle": {
         const item = s.list.items.find((i) => i.uid === d.uid);
         if (!item) return;
         if (navigator.vibrate && item.status !== "completed") navigator.vibrate(10);
+        // Un article coché devient un achat (enregistré par le serveur) : on met à jour l'ajout rapide.
+        if (item.status !== "completed") {
+          clearTimeout(this._suggTimer);
+          this._suggTimer = setTimeout(() => this._loadSuggestions(), 4000);
+        }
         this._listOp({ type: "status", uid: d.uid, status: item.status === "completed" ? "needs_action" : "completed" });
         return;
       }
@@ -3546,6 +3681,7 @@ class FrigoMalinPanel extends HTMLElement {
 
   async _loadHome() {
     const today = todayIso();
+    this._loadStats();
     try {
       const res = await this._ws("plan/list", { start: today, end: addDays(today, 6) });
       this.s.home.entries = res.entries;
@@ -4462,7 +4598,202 @@ class FrigoMalinPanel extends HTMLElement {
         </div>
         ${this.listEntity ? `<div class="card duo" id="home-shopping">${this._tplHomeShopping()}</div>` : ""}
       </div>
+      <div class="card stats-card" id="home-stats">${this._tplStats()}</div>
       ${this._tplVersion()}`;
+  }
+
+  /* ---------------- statistiques des repas (accueil) */
+
+  async _loadStats() {
+    const st = this.s.stats;
+    const period = st.period;
+    st.loading = true;
+    if (!st.data || st.data.period !== period) this._renderStats();
+    try {
+      const data = await this._ws("stats/meals", { period });
+      if (st.period !== period) return;
+      st.data = data;
+    } catch (_) {
+      if (st.period === period) st.data = { period, error: true, bars: [] };
+    }
+    st.loading = false;
+    this._renderStats();
+  }
+
+  _renderStats() {
+    const el = this.shadowRoot && this.shadowRoot.getElementById("home-stats");
+    if (el) el.innerHTML = this._tplStats();
+  }
+
+  _tplStats() {
+    const st = this.s.stats;
+    const periods = [["week", "Semaine"], ["month", "30 jours"], ["year", "12 mois"]];
+    const head = `<div class="home-head">${bubble("chart-bar", COLORS.indigo)}<h3>Statistiques</h3></div>
+      <div class="chips stats-periods">${periods.map(([k, l]) => `<button class="chip ${st.period === k ? "on" : ""}" data-action="stats-period" data-value="${k}">${l}</button>`).join("")}</div>`;
+    const data = st.data && st.data.period === st.period ? st.data : null;
+    if (!data) return head + skel("block");
+    if (data.error) return head + `<p class="muted">Statistiques indisponibles pour le moment.</p>`;
+    const anything = data.bars.some((b) => b.state !== "empty");
+    if (!anything)
+      return head + `<div class="stats-empty"><div class="emoji">📊</div><p class="muted">Planifiez vos repas dans la semaine : les calories et macronutriments se calculent au fil des jours.</p>
+        <button class="btn tonal" data-action="home-go" data-tab="week">${icon("calendar-week")} Voir la semaine</button></div>`;
+    return head + this._tplStatsChart(data) + this._tplStatsAverages(data) + this._tplStatsTops(data) +
+      (this.listEntity ? `<button class="btn text block stats-hist" data-action="purchases-open">${icon("history")} Historique des courses</button>` : "");
+  }
+
+  _tplStatsChart(data) {
+    const st = this.s.stats;
+    const bars = data.bars;
+    const kcalOf = (b) => b.protein * 4 + b.carbs * 4 + b.fat * 9;
+    const max = Math.max(1, ...bars.map((b) => Math.max(b.kcal, kcalOf(b))));
+    const scale = Math.ceil(max / 500) * 500;
+    const avg = data.average.kcal;
+    let sel = st.sel;
+    if (sel == null || !bars[sel]) {
+      sel = bars.findIndex((b) => b.today);
+      if (sel < 0 || bars[sel].state === "empty") {
+        const filled = bars.map((b, i) => (b.state === "eaten" ? i : -1)).filter((i) => i >= 0);
+        sel = filled.length ? filled[filled.length - 1] : Math.max(0, sel);
+      }
+    }
+    const per = data.period === "year" ? "/ jour en moyenne" : "";
+    const showLabel = (i) => data.period !== "month" || i % 5 === 0 || bars[i].today;
+    const cols = bars
+      .map((b, i) => {
+        const total = kcalOf(b) || 1;
+        const h = b.state === "empty" ? 0 : Math.max(3, (b.kcal / scale) * 100);
+        const seg = ["fat", "carbs", "protein"]
+          .map((k) => `<i style="flex-grow:${Math.max(0.001, (b[k] * (k === "fat" ? 9 : 4)) / total)};background:${NUT_COLORS[k]}"></i>`)
+          .join("");
+        const tip = b.state === "empty" ? `${b.label} : rien de prévu` : `${b.label} : ${b.kcal} kcal ${per}${b.state === "planned" ? " (prévu)" : ""}`;
+        return `<button class="sc-col ${i === sel ? "sel" : ""} ${b.today ? "today" : ""}" data-action="stats-day" data-i="${i}" title="${esc(tip)}" aria-label="${esc(tip)}">
+          <span class="sc-bar ${b.state}" style="height:${h}%">${b.state === "empty" ? "" : seg}</span>
+          <span class="sc-x">${showLabel(i) ? esc(b.short) : ""}</span></button>`;
+      })
+      .join("");
+    const b = bars[sel];
+    const detail = b
+      ? b.state === "empty"
+        ? `<b>${esc(cap(b.label))}</b><span class="muted">Aucun repas ${b.date > todayIso() ? "prévu" : "au menu"}</span>`
+        : `<b>${esc(cap(b.label))}</b><span><b class="big">${b.kcal.toLocaleString("fr-FR")}</b> kcal${per ? ` <span class="muted">${per}</span>` : ""}${b.state === "planned" ? ` <span class="sc-tag">prévu</span>` : ""}</span>
+          <span class="sc-macros">${[["protein", "P"], ["carbs", "G"], ["fat", "L"]].map(([k, l]) => `<span><span class="dot" style="background:${NUT_COLORS[k]}"></span>${l} ${b[k]} g</span>`).join("")}<span class="muted">· ${b.meals} repas</span></span>`
+      : "";
+    return `<div class="sc">
+        <div class="sc-y"><span>${scale}</span><span>${scale / 2}</span><span>0</span></div>
+        <div class="sc-plot ${data.period}">
+          <div class="sc-grid"><i></i><i></i><i></i></div>
+          ${avg ? `<div class="sc-avg" style="bottom:${(avg / scale) * 100}%"><span>moy. ${avg.toLocaleString("fr-FR")}</span></div>` : ""}
+          ${cols}
+        </div>
+      </div>
+      <div class="sc-legend">${[["protein", "Protéines"], ["carbs", "Glucides"], ["fat", "Lipides"]].map(([k, l]) => `<span><span class="dot" style="background:${NUT_COLORS[k]}"></span>${l}</span>`).join("")}<span><span class="dot planned"></span>Prévu</span><span class="muted">kcal / pers.</span></div>
+      <div class="sc-detail">${detail}</div>`;
+  }
+
+  _tplStatsAverages(data) {
+    const a = data.average;
+    if (!data.days_with_meals) return "";
+    const kcal = a.protein * 4 + a.carbs * 4 + a.fat * 9 || 1;
+    const tile = (k, label, unit = "g") =>
+      `<div class="st-tile"><span class="lbl">${k ? `<span class="dot" style="background:${NUT_COLORS[k]}"></span>` : ""}${label}</span><b>${k ? a[k] : a.kcal.toLocaleString("fr-FR")}<small> ${unit}</small></b>${k && k !== "fiber" ? `<small class="muted">${Math.round((a[k] * (k === "fat" ? 9 : 4) * 100) / kcal)} %</small>` : k ? `<small class="muted">&nbsp;</small>` : `<small class="muted">sur ${data.days_with_meals} j</small>`}</div>`;
+    return `<div class="st-title">Moyenne par jour <span class="muted small">· par personne</span></div>
+      <div class="st-tiles">${tile("", "Énergie", "kcal")}${tile("protein", "Protéines")}${tile("carbs", "Glucides")}${tile("fat", "Lipides")}${tile("fiber", "Fibres")}</div>`;
+  }
+
+  _tplStatsTops(data) {
+    if (!data.top_recipes.length) return "";
+    const max = Math.max(...data.top_foods.map((f) => f.count), 1);
+    const when = { week: "cette semaine", month: "ces 30 derniers jours", year: "ces 12 derniers mois" }[data.period];
+    return `<div class="st-title">Les plus mangés <span class="muted small">${when} · ${data.meals} repas</span></div>
+      <div class="st-cols">
+        <div class="st-top"><div class="st-sub">🍽️ Plats</div>${data.top_recipes
+          .map((t, i) => {
+            const r = this._recipe(t.id) || t;
+            return `<button class="st-meal" data-action="open-recipe" data-id="${esc(t.id)}"><span class="rank">${i + 1}</span>${this._tplThumb(r)}<span class="grow">${esc(t.title)}</span><span class="cnt">×${t.count}</span></button>`;
+          })
+          .join("")}</div>
+        <div class="st-foods"><div class="st-sub">🥕 Ingrédients</div>${data.top_foods
+          .map((f) => `<div class="st-food"><span class="nm">${ingEmoji(f.name)} ${esc(f.name)}</span><span class="track"><i style="width:${Math.round((f.count / max) * 100)}%"></i></span><span class="cnt">${f.count}</span></div>`)
+          .join("")}</div>
+      </div>`;
+  }
+
+  /* ---------------- historique des courses */
+
+  async _loadPurchases() {
+    const top = this.top;
+    if (!top || top.type !== "purchases") return;
+    const days = top.days;
+    try {
+      const data = await this._ws("shopping/history", days ? { days } : {});
+      if (top.days !== days) return;
+      top.data = data;
+      top.error = null;
+    } catch (err) {
+      top.error = this._err(err);
+    }
+    top.loading = false;
+    if (this.top === top) this._renderOverlay();
+  }
+
+  _tplPurchases(top) {
+    const periods = [[30, "30 jours"], [90, "3 mois"], [365, "1 an"], [0, "Tout"]];
+    let body = `<div class="chips" style="margin-bottom:14px">${periods
+      .map(([v, l]) => `<button class="chip ${(top.days || 0) === v ? "on" : ""}" data-action="purchases-days" data-value="${v || ""}">${l}</button>`)
+      .join("")}</div>`;
+    const data = top.data;
+    if (top.error) return this._tplSheet("Historique des courses", body + `<div class="alert">${esc(top.error)}</div>`);
+    if (!data) return this._tplSheet("Historique des courses", body + skel("lines", 6));
+    if (!data.stats.items && !data.habits.length) {
+      body += `<div class="empty"><div class="emoji">🧾</div><p>Pas encore d'achat sur cette période.</p>
+        <p class="muted small">Chaque article coché dans la liste de courses (ici, dans Home Assistant ou au magasin) est noté avec sa date. Frigo Malin apprend ainsi vos habitudes pour mieux vous suggérer l'ajout rapide.</p></div>`;
+      return this._tplSheet("Historique des courses", body);
+    }
+    const st = data.stats;
+    body += `<div class="st-tiles ph-tiles">
+      <div class="st-tile"><span class="lbl">🛒 Articles</span><b>${st.items}</b></div>
+      <div class="st-tile"><span class="lbl">📅 Jours de courses</span><b>${st.trips}</b></div>
+      <div class="st-tile"><span class="lbl">📈 Par semaine</span><b>${String(st.per_week).replace(".", ",")}</b></div>
+      <div class="st-tile"><span class="lbl">🧺 Différents</span><b>${st.distinct}</b></div>
+    </div>`;
+    const onList = new Set(this.pendingItems.map((i) => foldText(i.summary.replace(/\(.*?\)/g, "")).trim()));
+    if (data.habits.length) {
+      body += `<div class="card ph-card"><div class="st-title">🔁 Vos habitudes <span class="muted small">pour l'ajout rapide</span></div>
+        ${data.habits
+          .slice(0, 12)
+          .map((h) => {
+            const due = h.due >= 1;
+            const soon = !due && h.due >= 0.75;
+            const there = onList.has(foldText(h.name).trim());
+            return `<div class="ph-habit ${due ? "due" : ""}">
+              <span class="ing-emoji">${ingEmoji(h.name)}</span>
+              <div class="grow"><div class="nm">${esc(h.name)} ${due ? `<span class="badge-due">À racheter</span>` : soon ? `<span class="badge-soon">Bientôt</span>` : ""}</div>
+                <div class="muted small">Tous les ~${h.every} j · ${h.since === 0 ? "acheté aujourd'hui" : h.since === 1 ? "acheté hier" : `il y a ${h.since} j`} · ${h.count} fois</div>
+                <span class="ph-gauge"><i style="width:${Math.min(100, Math.round(h.due * 100))}%"></i></span></div>
+              ${there ? `<span class="muted small ph-there">${icon("check")} Dans la liste</span>` : `<button class="icon-btn ph-add" data-action="quick-chip" data-name="${esc(h.name)}" aria-label="Ajouter ${esc(h.name)} à la liste">${icon("cart-plus")}</button>`}
+            </div>`;
+          })
+          .join("")}</div>`;
+    }
+    if (data.top.length) {
+      const max = data.top[0].count;
+      body += `<div class="card ph-card"><div class="st-title">🏆 Les plus achetés</div>
+        <div class="st-foods">${data.top
+          .map((f) => `<div class="st-food"><span class="nm">${ingEmoji(f.name)} ${esc(f.name)}</span><span class="track"><i style="width:${Math.round((f.count / max) * 100)}%"></i></span><span class="cnt">${f.count}</span></div>`)
+          .join("")}</div></div>`;
+    }
+    if (data.days.length) {
+      body += `<div class="st-title" style="margin-top:6px">🗓️ Historique</div>
+        ${data.days
+          .map(
+            (d) => `<div class="ph-day"><div class="ph-date">${esc(cap(fmtDay(d.date, { weekday: "long", day: "numeric", month: "long" })))}${d.date.slice(0, 4) !== todayIso().slice(0, 4) ? ` ${d.date.slice(0, 4)}` : ""}<span class="muted small"> · ${d.items.length} article${d.items.length > 1 ? "s" : ""}</span></div>
+            <div class="ph-items">${d.items
+              .map((i) => `<span class="ph-item"><span>${ingEmoji(i.name)} ${esc(i.name)}</span><small>${new Date(i.at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</small><button class="ph-del" data-action="purchase-delete" data-name="${esc(i.name)}" data-at="${esc(i.at)}" aria-label="Retirer ${esc(i.name)} de l'historique">${icon("close")}</button></span>`)
+              .join("")}</div></div>`
+          )
+          .join("")}`;
+    }
+    return this._tplSheet("Historique des courses", body);
   }
 
   /* Ajout rapide qui se déplie sous les raccourcis, sans ouvrir de fenêtre. */
@@ -4660,7 +4991,10 @@ class FrigoMalinPanel extends HTMLElement {
 
   _tplQuickChips() {
     return this._quickNames()
-      .map((name) => `<button class="chip add" data-action="quick-chip" data-name="${esc(name)}">${ingEmoji(name) === "🥄" ? icon("plus") : ingEmoji(name)} ${esc(name)}</button>`)
+      .map((name) => {
+        const due = this.s.dueNames.has(foldText(name).trim());
+        return `<button class="chip add ${due ? "due" : ""}" data-action="quick-chip" data-name="${esc(name)}" ${due ? `title="Vous en rachetez souvent à ce moment-ci"` : ""}>${ingEmoji(name) === "🥄" ? icon("plus") : ingEmoji(name)} ${esc(name)}${due ? ` <span class="due-mark">🔁</span>` : ""}</button>`;
+      })
       .join("");
   }
 
@@ -4708,6 +5042,7 @@ class FrigoMalinPanel extends HTMLElement {
       </div></div>`;
 
     let html = `${this._tplOfflineBanner()}<div class="list-head">${bubble("format-list-checks", COLORS.green)}<h3>À acheter</h3><span class="muted small">${pending.length}</span>
+        <button class="icon-btn hist-open" data-action="purchases-open" aria-label="Historique des courses" title="Historique des courses">${icon("history")}</button>
         ${pending.length ? `<button class="btn tonal sm-open" data-action="store-mode">🏪 Mode magasin</button>` : ""}</div>`;
     if (!pending.length) {
       html += `<div class="empty" style="padding:20px 16px"><div class="emoji">🛒</div><p>La liste est vide. Ajoutez un article ci-dessus ou les ingrédients de votre menu.</p></div>`;
@@ -5643,6 +5978,8 @@ class FrigoMalinPanel extends HTMLElement {
         return this._tplWeekPlan(top);
       case "copy":
         return this._tplCopy(top);
+      case "purchases":
+        return this._tplPurchases(top);
       default:
         return "";
     }

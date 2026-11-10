@@ -28,6 +28,7 @@ from .const import (
     STATIC_URL,
     VERSION,
 )
+from .purchases import PurchaseTracker
 from .reminder import StoreReminder
 from .store import FrigoStore
 from .websocket_api import _shopping_entity, async_register_websocket_api
@@ -100,6 +101,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: FrigoConfigEntry) -> boo
 
     reminder = StoreReminder(hass, entry.runtime_data, lambda: _shopping_entity(hass, entry.runtime_data))
     entry.async_on_unload(reminder.async_start())
+    tracker = PurchaseTracker(hass, entry.runtime_data, lambda: _shopping_entity(hass, entry.runtime_data))
+    entry.async_on_unload(tracker.async_start())
 
     _announce_update(hass, store)
 

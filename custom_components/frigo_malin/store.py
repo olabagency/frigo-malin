@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -82,6 +82,8 @@ class FrigoStore:
         self.fridge: dict[str, Any] = {"items": [], "updated": None}
         # Valeurs nutritionnelles estimées par l'IA pour les aliments absents de la table : clé -> {kcal, protein…}.
         self.foods: dict[str, dict[str, Any]] = {}
+        # Articles achetés (cochés dans la liste) : {"key", "name", "at"}.
+        self.purchases: list[dict[str, Any]] = []
         self._listeners: list[Callable[[], None]] = []
 
     async def async_load(self) -> None:
@@ -95,6 +97,7 @@ class FrigoStore:
         self.usage = data.get("usage", {})
         self.fridge = data.get("fridge", {"items": [], "updated": None})
         self.foods = data.get("foods", {})
+        self.purchases = data.get("purchases", [])
 
     def set_last_version(self, version: str) -> None:
         self.last_version = version
@@ -111,6 +114,7 @@ class FrigoStore:
             "usage": self.usage,
             "fridge": self.fridge,
             "foods": self.foods,
+            "purchases": self.purchases,
         }
 
     # ------------------------------------------------------------------ frigo mémorisé
@@ -245,6 +249,31 @@ class FrigoStore:
             listener()
 
     # ------------------------------------------------------------------ recettes
+
+    def add_purchases(self, summaries: list[str], when: Any) -> None:
+        """Retient des articles achetés. Le même article coché deux fois en peu de temps ne compte qu'une fois."""
+        from .purchases import MAX_PURCHASES, purchase_label
+
+        recent = {p["key"]: p["at"] for p in self.purchases[-200:]}
+        added = False
+        for summary in summaries:
+            name = purchase_label(summary)
+            key = shopping_key(name)
+            if not key:
+                continue
+            last = recent.get(key)
+            if last and (when - datetime.fromisoformat(last)) < timedelta(hours=3):
+                continue
+            self.purchases.append({"key": key, "name": name, "at": when.isoformat()})
+            recent[key] = when.isoformat()
+            added = True
+        if added:
+            self.purchases = self.purchases[-MAX_PURCHASES:]
+            self._save()
+
+    def remove_purchase(self, key: str, at: str) -> None:
+        self.purchases = [p for p in self.purchases if not (p["key"] == key and p["at"] == at)]
+        self._save()
 
     def save_foods(self, foods: dict[str, dict[str, Any]]) -> None:
         self.foods.update(foods)
