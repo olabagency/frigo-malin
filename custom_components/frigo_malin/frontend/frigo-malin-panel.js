@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.16.2";
+const FM_VERSION = "1.17.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -352,6 +352,23 @@ const TAG_EMOJI = {
   Rapide: "⚡", "Sans gluten": "🌾", "Léger": "🪶",
 };
 
+/* Promesse abandonnée au bout de `ms` (réseau qui ne répond plus). */
+const withTimeout = (promise, ms) =>
+  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject({ code: "timeout", message: "timeout" }), ms))]);
+const isNetworkError = (err) =>
+  !err || err.code === 3 || err.code === "timeout" || /connect|lost|network|fetch|timeout|socket|offline/i.test(String((err && (err.message || err.code)) || ""));
+
+/* Blocs gris animés pendant un chargement. */
+function skel(kind, n = 3) {
+  const line = (w, h = 14) => `<span class="skel" style="width:${w};height:${h}px"></span>`;
+  const rows = Array.from({ length: n });
+  if (kind === "grid") return `<div class="rgrid">${rows.map(() => `<div class="rcard skel-card"><span class="skel fill"></span></div>`).join("")}</div>`;
+  if (kind === "cards")
+    return rows.map(() => `<div class="list-item skel-row"><span class="skel" style="width:64px;height:64px;border-radius:12px;flex-shrink:0"></span><div class="grow">${line("70%", 16)}${line("45%")}</div></div>`).join("");
+  if (kind === "lines") return `<div class="card">${rows.map((_, i) => `<div class="skel-line">${line("26px", 26)}${line(`${60 - (i % 3) * 12}%`)}</div>`).join("")}</div>`;
+  return `<div class="skel-block">${line("40%", 13)}${line("80%", 20)}${line("55%")}</div>`;
+}
+
 /* Macronutriments par portion (calculés par le serveur). */
 const NUT_COLORS = { protein: "#e53935", carbs: "#f9a825", fat: "#1e88e5", fiber: "#43a047" };
 function nutBadge(r) {
@@ -563,7 +580,46 @@ select.input { appearance: auto; }
 .aisle-title { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 14px; color: var(--fm-text2); padding: 10px 0 4px; }
 .aisle-title .n { margin-left: auto; font-size: 12px; }
 .li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--fm-divider); }
-.aisle-title + .li { border-top: 0; }
+.aisle-title + .li-wrap .li { border-top: 0; }
+.li-wrap { position: relative; overflow: hidden; touch-action: pan-y; }
+.li-wrap .li { position: relative; background: var(--fm-card); transition: transform .2s ease; }
+.li-wrap.dragging .li { transition: none; }
+.li-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; color: #fff; font-size: 14px; font-weight: 600; opacity: 0; }
+.li-bg span { display: inline-flex; align-items: center; gap: 6px; }
+.li-wrap.right .li-bg { opacity: 1; background: var(--fm-success, #2e9e5b); }
+.li-wrap.left .li-bg { opacity: 1; background: var(--fm-error); }
+.li-wrap.right .li-bg .del, .li-wrap.left .li-bg .ok { visibility: hidden; }
+.li-wrap.armed .li-bg span { transform: scale(1.08); }
+.li.offline .txt > div:first-child::after { content: " ⏳"; }
+.offline-bar { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: 13px; background: color-mix(in srgb, var(--fm-warning) 18%, transparent); }
+.list-head .sm-open { margin-left: auto; min-height: 34px; padding: 0 12px; font-size: 14px; }
+.toast-act { margin-left: 6px; border: 0; background: none; color: var(--fm-primary-light, #7fd3ff); font: inherit; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 4px 6px; cursor: pointer; }
+.toast.error .toast-act { color: #fff; }
+
+/* Mode cuisine mains libres */
+.icon-btn.on { color: var(--fm-primary); background: var(--fm-soft); }
+.voice-hint { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 16px 8px; padding: 6px 12px; border-radius: 14px; font-size: 13px; color: var(--fm-text2); background: var(--fm-soft); }
+.mic-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--fm-error); animation: pulse 1.2s ease-in-out infinite; }
+
+/* Mode magasin */
+.sm-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 14px; color: var(--fm-text2); }
+.sm-progress .bar { flex: 1; height: 10px; border-radius: 6px; background: var(--fm-divider); overflow: hidden; }
+.sm-progress .bar i { display: block; height: 100%; background: var(--fm-success, #2e9e5b); transition: width .3s ease; }
+.sm-aisle { margin-bottom: 14px; border-radius: 16px; overflow: hidden; background: var(--fm-card); border: 1px solid var(--fm-divider); }
+.sm-aisle-t { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font-weight: 700; font-size: 15px; border-bottom: 1px solid var(--fm-divider); }
+.sm-aisle-t span { margin-left: auto; font-weight: 500; color: var(--fm-text2); font-size: 13px; }
+.sm-row { width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px; border: 0; border-top: 1px solid var(--fm-divider); text-align: left; font: inherit; color: var(--fm-text); cursor: pointer; }
+.sm-aisle-t + .li-wrap .sm-row { border-top: 0; }
+.sm-row .tick { width: 36px; height: 36px; border-radius: 50%; border: 2.5px solid var(--fm-divider); display: inline-flex; align-items: center; justify-content: center; color: transparent; flex-shrink: 0; }
+.sm-row .tick ha-icon { --mdc-icon-size: 22px; }
+.sm-row .ing-emoji { font-size: 24px; width: 32px; }
+.sm-row .txt { flex: 1; font-size: 19px; font-weight: 500; line-height: 1.25; }
+.sm-row .txt small { display: block; font-size: 13px; font-weight: 400; color: var(--fm-text2); }
+.sm-row.done .tick { background: var(--fm-success, #2e9e5b); border-color: var(--fm-success, #2e9e5b); color: #fff; }
+.sm-row.done .txt { text-decoration: line-through; color: var(--fm-text2); }
+.sm-basket { opacity: .75; }
+.sm-done { text-align: center; padding: 24px 18px; }
+.sm-done .emoji { font-size: 56px; }
 .li .tick {
   width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--fm-divider); background: none; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center; color: transparent; padding: 0;
@@ -686,6 +742,55 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .nut-day { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--fm-text2); white-space: nowrap; }
 .week-nut { padding: 12px 14px; }
 .week-nut .nut-bar { margin: 10px 0 8px; height: 8px; }
+
+/* Bouton + central */
+nav.tabs .plus-slot { flex: 1; display: flex; align-items: center; justify-content: center; }
+nav.tabs button.plus { flex: 0 0 auto; width: 56px; height: 56px; margin-top: -22px; border-radius: 50%; gap: 0; color: var(--fm-on-primary, #fff); background: var(--fm-primary); box-shadow: 0 6px 18px color-mix(in srgb, var(--fm-primary) 45%, transparent), 0 0 0 5px var(--fm-card); transition: transform .25s ease; }
+nav.tabs button.plus ha-icon { --mdc-icon-size: 30px; }
+nav.tabs button.plus.open { transform: rotate(45deg); }
+.plus-backdrop { position: absolute; inset: 0; z-index: 8; background: rgba(0,0,0,.28); animation: fade .15s ease-out; }
+.plus-menu { position: absolute; z-index: 9; left: 50%; transform: translateX(-50%); bottom: calc(var(--fm-nav-h) + 18px + env(safe-area-inset-bottom)); width: min(340px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 8px; animation: plusUp .2s ease-out; }
+.plus-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 0; border-radius: 18px; background: var(--fm-card); color: var(--fm-text); text-align: left; font: inherit; box-shadow: 0 8px 24px rgba(0,0,0,.18); cursor: pointer; }
+.plus-item b { display: block; font-size: 16px; }
+.plus-item small { color: var(--fm-text2); font-size: 13px; }
+@keyframes plusUp { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Animations : arrivée sur un onglet, squelettes de chargement */
+.page.tab-enter { animation: tabIn .22s ease-out; }
+@keyframes tabIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.skel { display: block; border-radius: 8px; margin: 6px 0; background: linear-gradient(90deg, var(--fm-divider) 25%, color-mix(in srgb, var(--fm-divider) 40%, var(--fm-card)) 50%, var(--fm-divider) 75%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+.skel.fill { position: absolute; inset: 0; margin: 0; border-radius: 0; }
+.skel-row { pointer-events: none; }
+.skel-line { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+.skel-line .skel:first-child { border-radius: 50%; flex-shrink: 0; }
+.skel-block { padding: 4px 0; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.btn:active, .chip:active, .home-tile:active, .rcard-open:active, .plus-item:active { transform: scale(.97); }
+.btn, .chip, .home-tile, .rcard-open, .plus-item { transition: transform .12s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .page.tab-enter, .skel, .plus-menu, .plus-backdrop { animation: none; }
+  .btn, .chip, .home-tile, .rcard-open, .plus-item, nav.tabs button.plus { transition: none; }
+}
+
+/* Carnet en grille de photos */
+.search-row { gap: 8px; align-items: center; margin-bottom: 0; }
+.search-row .search { margin-bottom: 12px; }
+.layout-btn { flex-shrink: 0; margin-bottom: 12px; border: 1px solid var(--fm-divider); background: var(--fm-card); }
+.rgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+@media (min-width: 640px) { .rgrid { grid-template-columns: repeat(3, 1fr); } }
+.rcard { position: relative; aspect-ratio: 4 / 5; border-radius: 18px; overflow: hidden; background: var(--fm-divider); }
+.rcard-open { position: absolute; inset: 0; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; display: block; text-align: left; }
+.rcard img, .rcard-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.rcard-bg { display: flex; align-items: center; justify-content: center; }
+.rcard-bg span { font-size: 56px; transform: translateY(-14px) rotate(-6deg); }
+.rcard-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,.78) 100%); }
+.rcard-text { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 12px 12px; color: #fff; display: flex; flex-direction: column; gap: 4px; }
+.rcard-text .t { font-weight: 700; font-size: 15px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-shadow: 0 1px 6px rgba(0,0,0,.4); }
+.rcard-text .m { font-size: 12px; opacity: .9; }
+.rcard-fav { position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 50%; border: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.32); color: #fff; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: pointer; }
+.rcard-fav.on { color: #ffc107; }
+.rcard-fav ha-icon { --mdc-icon-size: 20px; }
+.skel-card { pointer-events: none; }
 
 /* Accueil */
 .home-hello { margin: 4px 2px 14px; }
@@ -1047,6 +1152,11 @@ class FrigoMalinPanel extends HTMLElement {
     });
     // L'iPhone coupe le maintien de l'écran allumé à chaque mise en veille : on le redemande au retour.
     document.addEventListener("visibilitychange", () => this._onVisibility());
+    window.addEventListener("online", () => {
+      this._flushOps();
+      this._renderListParts();
+    });
+    window.addEventListener("offline", () => this._renderListParts());
   }
 
   _freshFridge(servings) {
@@ -1068,8 +1178,14 @@ class FrigoMalinPanel extends HTMLElement {
 
   set hass(hass) {
     const first = !this._hass;
+    const wasConnected = this._hass ? this._hass.connected !== false : true;
     this._hass = hass;
     if (first) this._init();
+    else if (hass.connected !== false && !wasConnected) {
+      // Retour du réseau : on envoie les changements de la liste faits hors connexion.
+      this._flushOps();
+      this._renderListParts();
+    } else if (hass.connected === false && wasConnected) this._renderListParts();
   }
   get hass() {
     return this._hass;
@@ -1109,6 +1225,7 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   async _init() {
+    this._restoreCache();
     this._render();
     try {
       const [config, list] = await Promise.all([this._ws("config"), this._ws("recipes/list")]);
@@ -1126,6 +1243,7 @@ class FrigoMalinPanel extends HTMLElement {
     }
     this._render();
     this._subscribeList();
+    if (this._loadOps().length) this._flushOps();
     this._loadSuggestions();
     this._loadFridgeMemory();
     this._loadHome();
@@ -1136,6 +1254,213 @@ class FrigoMalinPanel extends HTMLElement {
       this._onLocation = () => setTimeout(() => this._applyRoute(), 0);
       window.addEventListener("location-changed", this._onLocation);
     }
+  }
+
+  /* ---------------- démarrage instantané : les dernières données connues, gardées sur l'appareil */
+
+  _restoreCache() {
+    let cache = null;
+    try {
+      cache = JSON.parse(localStorage.getItem("frigo-malin-cache") || "null");
+    } catch (_) {
+      return;
+    }
+    if (!cache || cache.v !== 1 || !cache.config) return;
+    const s = this.s;
+    // La version vient toujours du serveur (sinon l'annonce de mise à jour s'afficherait à tort).
+    s.config = { ...cache.config, version: FM_VERSION };
+    s.recipes = cache.recipes || [];
+    s.fridge.servings = s.config.default_servings || 4;
+    if (cache.home) {
+      s.home.entries = cache.home;
+      s.home.loaded = true;
+    }
+    if (cache.fridge) s.fridgeMemory = cache.fridge;
+    if (cache.week && cache.week.start === s.week.start) s.week.entries = cache.week.entries || [];
+    if (cache.list) {
+      s.list.items = cache.list;
+      s.list.loaded = true;
+      for (const op of this._loadOps()) this._applyListOp(op);
+    }
+    s.loaded = true;
+  }
+
+  _saveCache() {
+    clearTimeout(this._cacheTimer);
+    this._cacheTimer = setTimeout(() => {
+      const s = this.s;
+      if (!s.config || !s.loaded) return;
+      try {
+        localStorage.setItem(
+          "frigo-malin-cache",
+          JSON.stringify({
+            v: 1,
+            config: s.config,
+            recipes: s.recipes,
+            home: s.home.loaded ? s.home.entries : null,
+            fridge: s.fridgeMemory,
+            week: { start: s.week.start, entries: s.week.entries },
+            list: s.list.loaded && !s.list.error ? s.list.items.filter((i) => !String(i.uid).startsWith("tmp-")) : null,
+          })
+        );
+      } catch (_) {
+        /* stockage plein ou indisponible : pas grave */
+      }
+    }, 1500);
+  }
+
+  /* ---------------- courses : changements appliqués tout de suite, envoyés à Home Assistant, gardés hors connexion */
+
+  get _online() {
+    return navigator.onLine !== false && !(this._hass && this._hass.connected === false);
+  }
+
+  _loadOps() {
+    if (!this._ops) {
+      try {
+        // Changements restés en attente lors d'une visite précédente : à renvoyer.
+        this._ops = JSON.parse(localStorage.getItem("frigo-malin-ops") || "[]").map((op) => ({ ...op, failed: true }));
+      } catch (_) {
+        this._ops = [];
+      }
+    }
+    return this._ops;
+  }
+
+  _persistOps() {
+    try {
+      localStorage.setItem("frigo-malin-ops", JSON.stringify(this._ops.map(({ sending, timer, ...op }) => op)));
+    } catch (_) {
+      /* stockage indisponible */
+    }
+  }
+
+  _applyListOp(op) {
+    const l = this.s.list;
+    const item = op.uid ? l.items.find((i) => i.uid === op.uid) : null;
+    if (op.type === "status" && item) item.status = op.status;
+    else if (op.type === "rename" && item) item.summary = op.text;
+    else if (op.type === "remove") l.items = l.items.filter((i) => i.uid !== op.uid);
+    else if (op.type === "add" && !item) l.items.push({ uid: op.uid, summary: op.text, status: "needs_action", offline: true });
+  }
+
+  _listOp(op, delay = 0) {
+    this._loadOps();
+    op.id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    if (delay) op.due = Date.now() + delay;
+    // Article ajouté hors connexion, pas encore envoyé : on modifie directement l'ajout en attente.
+    const pendingAdd = op.uid && String(op.uid).startsWith("tmp-") ? this._ops.find((o) => o.type === "add" && o.uid === op.uid) : null;
+    if (pendingAdd && op.type !== "add") {
+      if (op.type === "remove" || (op.type === "status" && op.status === "completed")) this._ops = this._ops.filter((o) => o !== pendingAdd);
+      else if (op.type === "rename") pendingAdd.text = op.text;
+      this._applyListOp(op);
+      this._persistOps();
+      this._renderListParts();
+      return op;
+    }
+    this._applyListOp(op);
+    this._ops.push(op);
+    this._persistOps();
+    this._renderListParts();
+    this._sendOp(op);
+    return op;
+  }
+
+  _sendRequest(op) {
+    if (op.type === "status") return this._todo("update_item", { item: op.uid, status: op.status });
+    if (op.type === "remove") return this._todo("remove_item", { item: [op.uid] });
+    if (op.type === "rename") return this._todo("update_item", { item: op.uid, rename: op.text });
+    if (op.type === "add") return this._ws("shopping/add", { items: [op.text], quick: true });
+    return Promise.resolve();
+  }
+
+  async _sendOp(op) {
+    if (op.sending || !this._ops.includes(op)) return;
+    if (op.due && op.due > Date.now()) {
+      clearTimeout(op.timer);
+      op.timer = setTimeout(() => this._sendOp(op), op.due - Date.now() + 20);
+      return;
+    }
+    if (!this._online) {
+      this._offlineNotice();
+      this._scheduleFlush();
+      return;
+    }
+    op.sending = true;
+    try {
+      await withTimeout(this._sendRequest(op), 15000);
+      this._ops = this._ops.filter((o) => o !== op);
+      this._persistOps();
+      if (op.type === "add") this._loadSuggestions();
+    } catch (err) {
+      op.sending = false;
+      if (!this._online || isNetworkError(err)) {
+        op.failed = true;
+        this._offlineNotice();
+        this._scheduleFlush();
+      } else {
+        this._ops = this._ops.filter((o) => o !== op);
+        this._persistOps();
+        this._toast(this._err(err), true);
+      }
+    }
+    this._renderListParts();
+  }
+
+  _flushOps() {
+    for (const op of [...this._loadOps()]) this._sendOp(op);
+  }
+
+  _scheduleFlush() {
+    if (this._flushTimer) return;
+    this._flushTimer = setInterval(() => {
+      if (!this._loadOps().length) {
+        clearInterval(this._flushTimer);
+        this._flushTimer = null;
+        this._renderListParts();
+        return;
+      }
+      if (this._online) this._flushOps();
+    }, 15000);
+  }
+
+  _offlineNotice() {
+    if (this._offlineToastAt && Date.now() - this._offlineToastAt < 60000) return;
+    this._offlineToastAt = Date.now();
+    this._toast("📴 Hors connexion : c'est noté, la liste sera mise à jour au retour du réseau.");
+  }
+
+  /* Supprimer un article : retiré tout de suite, envoyé après 5 s, sauf si on annule. */
+  _removeListItem(uid) {
+    const items = this.s.list.items;
+    const index = items.findIndex((i) => i.uid === uid);
+    if (index < 0) return;
+    const item = { ...items[index] };
+    const op = this._listOp({ type: "remove", uid }, 5000);
+    this._toast(`🗑️ ${item.summary} supprimé`, false, { label: "Annuler", run: () => this._undoRemove(op, item, index) });
+  }
+
+  _undoRemove(op, item, index) {
+    this._loadOps();
+    if (this._ops.includes(op) && !op.sending) {
+      clearTimeout(op.timer);
+      this._ops = this._ops.filter((o) => o !== op);
+      this._persistOps();
+      if (!this.s.list.items.some((i) => i.uid === item.uid)) this.s.list.items.splice(Math.min(index, this.s.list.items.length), 0, item);
+      this._renderListParts();
+    } else {
+      // Déjà parti chez Home Assistant : on le remet dans la liste.
+      this._quickAdd([item.summary]);
+    }
+    this._toast(`↩️ ${item.summary} remis dans la liste`);
+  }
+
+  _tplOfflineBanner() {
+    const waiting = this._loadOps().filter((o) => !o.due || o.due <= Date.now());
+    const n = waiting.length;
+    // Envoi normal (quelques dixièmes de seconde) : pas de bandeau.
+    if (this._online && !waiting.some((o) => o.failed)) return "";
+    return `<div class="offline-bar">📴 ${this._online ? "Envoi en cours…" : "Hors connexion"}${n ? ` · ${n} changement${n > 1 ? "s" : ""} en attente` : " · la liste reste utilisable"}</div>`;
   }
 
   /* Liens directs : /frigo-malin?tab=shopping&store=…, ?recipe=…&cook=1 (notifications, carte du tableau de bord). */
@@ -1154,6 +1479,10 @@ class FrigoMalinPanel extends HTMLElement {
     const store = params.get("store");
     if (store && (this.settings.stores || []).some((x) => x.id === store)) this._pickStore(store);
     if (params.get("resume") === "cook" && !s.stack.some((x) => x.type === "cook")) this._restoreCookSession();
+    if (params.get("mode") === "store" && this.listEntity) {
+      s.stack = [{ type: "store-mode" }];
+      this._requestWakeLock();
+    }
     const recipe = this._recipe(params.get("recipe"));
     if (recipe) {
       const servings = Number(params.get("servings")) || recipe.servings || 4;
@@ -1200,6 +1529,7 @@ class FrigoMalinPanel extends HTMLElement {
       this._listUnsub = await this._hass.connection.subscribeMessage(
         (msg) => {
           this.s.list.items = msg.items || [];
+          for (const op of this._loadOps()) this._applyListOp(op);
           this.s.list.loaded = true;
           this.s.list.error = null;
           this._renderListParts();
@@ -1257,6 +1587,11 @@ class FrigoMalinPanel extends HTMLElement {
     root.querySelectorAll(".quick-count").forEach((el) => (el.innerHTML = this._tplQuickCount()));
     const home = root.getElementById("home-shopping");
     if (home) home.innerHTML = this._tplHomeShopping();
+    const storeList = root.getElementById("store-list");
+    if (storeList) storeList.innerHTML = this._tplStoreList();
+    const progress = root.getElementById("sm-progress");
+    if (progress) progress.innerHTML = this._tplStoreProgress();
+    this._saveCache();
   }
 
   /* Enregistre le texte modifié d'un article (Entrée ou sortie du champ). */
@@ -1267,11 +1602,8 @@ class FrigoMalinPanel extends HTMLElement {
     const value = String(input.value || "").trim();
     const item = this.s.list.items.find((i) => i.uid === uid);
     this.s.list.editing = null;
-    if (item && value && value !== item.summary) {
-      item.summary = value;
-      this._todo("update_item", { item: uid, rename: value }).catch((err) => this._toast(this._err(err), true));
-    }
-    this._renderListParts();
+    if (item && value && value !== item.summary) this._listOp({ type: "rename", uid, text: value });
+    else this._renderListParts();
   }
 
   _onFocusOut(ev) {
@@ -1284,6 +1616,12 @@ class FrigoMalinPanel extends HTMLElement {
     if (!items.length) return;
     if (!this.listEntity) {
       this._toast("Aucune liste de courses : choisissez-en une dans ⚙️ Réglages du foyer.", true);
+      return;
+    }
+    if (!this._online) {
+      for (const text of items) this._listOp({ type: "add", uid: `tmp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, text: cap(text) });
+      this._offlineToastAt = 0;
+      this._offlineNotice();
       return;
     }
     try {
@@ -1322,14 +1660,14 @@ class FrigoMalinPanel extends HTMLElement {
     return (err && (err.message || err.code)) || "Une erreur est survenue";
   }
 
-  _toast(message, error = false) {
+  _toast(message, error = false, action = null) {
     clearTimeout(this._toastTimer);
-    this.s.toast = { message, error };
+    this.s.toast = { message, error, action };
     this._renderToast();
     this._toastTimer = setTimeout(() => {
       this.s.toast = null;
       this._renderToast();
-    }, error ? 6000 : 4000);
+    }, error ? 6000 : action ? 5000 : 4000);
   }
 
   /* ---------------- état lié aux champs */
@@ -1549,6 +1887,10 @@ class FrigoMalinPanel extends HTMLElement {
 
   _onTouchStart(ev) {
     this._mealPressStart(ev, ev.touches[0].clientX, ev.touches[0].clientY);
+    // Article de la liste de courses : balayer à droite = cocher, à gauche = supprimer.
+    const lrow = ev.composedPath().find((n) => n.dataset && n.dataset.lswipe);
+    const inField = ev.composedPath().some((n) => n.tagName === "INPUT");
+    this._ls = lrow && !inField ? { row: lrow, x: ev.touches[0].clientX, y: ev.touches[0].clientY, dir: null, dx: 0 } : null;
     const t = ev.touches[0];
     this._touchX = t.clientX;
     this._touchY = t.clientY;
@@ -1565,6 +1907,25 @@ class FrigoMalinPanel extends HTMLElement {
     if (this._mealDrag) {
       ev.preventDefault();
       this._moveMealDrag(t0.clientX, t0.clientY);
+      return;
+    }
+    if (this._ls) {
+      const ls = this._ls;
+      const dx = t0.clientX - ls.x;
+      const dy = t0.clientY - ls.y;
+      if (!ls.dir) {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        ls.dir = Math.abs(dx) > Math.abs(dy) * 1.2 ? "h" : "v";
+      }
+      if (ls.dir !== "h") return;
+      if (ev.cancelable) ev.preventDefault();
+      ls.dx = dx;
+      ls.row.classList.add("dragging");
+      ls.row.classList.toggle("right", dx > 0);
+      ls.row.classList.toggle("left", dx < 0);
+      ls.row.classList.toggle("armed", Math.abs(dx) > 90);
+      const front = ls.row.querySelector(".li");
+      if (front) front.style.transform = `translateX(${dx}px)`;
       return;
     }
     // Le doigt bouge avant l'appui long : c'est un défilement, pas un déplacement.
@@ -1589,6 +1950,31 @@ class FrigoMalinPanel extends HTMLElement {
   }
 
   _onTouchEnd(ev) {
+    if (this._ls) {
+      const { row, dir, dx } = this._ls;
+      this._ls = null;
+      if (dir === "h") {
+        this._swipeJustMoved = true;
+        setTimeout(() => (this._swipeJustMoved = false), 350);
+        row.classList.remove("dragging");
+        const front = row.querySelector(".li");
+        const uid = row.dataset.lswipe;
+        if (Math.abs(dx) > 90) {
+          if (front) front.style.transform = `translateX(${dx > 0 ? "" : "-"}110%)`;
+          if (navigator.vibrate) navigator.vibrate(15);
+          setTimeout(() => {
+            if (dx > 0) {
+              const item = this.s.list.items.find((i) => i.uid === uid);
+              if (item) this._listOp({ type: "status", uid, status: item.status === "completed" ? "needs_action" : "completed" });
+            } else this._removeListItem(uid);
+          }, 170);
+        } else {
+          if (front) front.style.transform = "";
+          setTimeout(() => row.classList.remove("left", "right", "armed"), 220);
+        }
+        return;
+      }
+    }
     if (this._mealDrag || this._press) {
       const wasDragging = Boolean(this._mealDrag);
       this._endMealDrag();
@@ -1717,6 +2103,8 @@ class FrigoMalinPanel extends HTMLElement {
         window.location.reload();
         return;
       case "tab":
+        if (s.plusOpen) this._setPlus(false);
+        this._tabAnim = s.tab !== d.tab;
         s.tab = d.tab;
         s.home.quick = false;
         if (s.tab === "home") this._loadHome();
@@ -1729,7 +2117,11 @@ class FrigoMalinPanel extends HTMLElement {
         this.shadowRoot.querySelector("main")?.scrollTo(0, 0);
         return;
       case "close":
-        if (this.top && this.top.type === "cook") this._releaseWakeLock();
+        if (this.top && (this.top.type === "cook" || this.top.type === "store-mode")) this._releaseWakeLock();
+        if (this.top && this.top.type === "cook") {
+          this._stopListening();
+          if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+        }
         s.stack.pop();
         this._renderOverlay();
         this._saveCookSession();
@@ -1758,6 +2150,18 @@ class FrigoMalinPanel extends HTMLElement {
         input?.focus({ preventScroll: true });
         return;
       }
+      case "plus-toggle":
+        this._setPlus(!s.plusOpen);
+        return;
+      case "plus-photo":
+        // Le sélecteur de photo doit s'ouvrir pendant l'appui (sinon l'iPhone le bloque).
+        this.shadowRoot.getElementById("plus-cam")?.click();
+        this._setPlus(false);
+        return;
+      case "plus-quick":
+        this._setPlus(false);
+        this._dispatch("quick-open", { dataset: {} });
+        return;
       case "home-jow":
         this._dispatch("tab", { dataset: { tab: "recipes" } });
         this._dispatch("import-open", { dataset: {} });
@@ -1850,10 +2254,8 @@ class FrigoMalinPanel extends HTMLElement {
       case "list-toggle": {
         const item = s.list.items.find((i) => i.uid === d.uid);
         if (!item) return;
-        const status = item.status === "completed" ? "needs_action" : "completed";
-        item.status = status;
-        this._renderListParts();
-        this._todo("update_item", { item: d.uid, status }).catch((err) => this._toast(this._err(err), true));
+        if (navigator.vibrate && item.status !== "completed") navigator.vibrate(10);
+        this._listOp({ type: "status", uid: d.uid, status: item.status === "completed" ? "needs_action" : "completed" });
         return;
       }
       case "list-edit":
@@ -1871,15 +2273,40 @@ class FrigoMalinPanel extends HTMLElement {
         this._saveListEdit(el);
         return;
       case "list-remove":
-        s.list.items = s.list.items.filter((i) => i.uid !== d.uid);
-        this._renderListParts();
-        this._todo("remove_item", { item: [d.uid] }).catch((err) => this._toast(this._err(err), true));
+        this._removeListItem(d.uid);
         return;
+      case "toast-action": {
+        const action = s.toast && s.toast.action;
+        clearTimeout(this._toastTimer);
+        s.toast = null;
+        this._renderToast();
+        if (action) action.run();
+        return;
+      }
+      case "store-mode":
+        if (d.store) this._pickStore(d.store);
+        if (!s.stack.some((x) => x.type === "store-mode")) s.stack.push({ type: "store-mode" });
+        this._requestWakeLock();
+        this._renderOverlay();
+        return;
+      case "store-finish": {
+        const done = s.list.items.filter((i) => i.status === "completed");
+        for (const item of done) this._listOp({ type: "remove", uid: item.uid });
+        s.stack = s.stack.filter((x) => x.type !== "store-mode");
+        this._releaseWakeLock();
+        this._renderOverlay();
+        this._toast("🎉 Courses terminées, panier vidé");
+        return;
+      }
       case "list-show-done":
         s.list.showDone = !s.list.showDone;
         this._renderListParts();
         return;
       case "list-clear-done":
+        if (!this._online) {
+          for (const item of s.list.items.filter((i) => i.status === "completed")) this._listOp({ type: "remove", uid: item.uid });
+          return;
+        }
         this._todo("remove_completed_items", {})
           .then(() => this._toast("Panier vidé"))
           .catch((err) => this._toast(this._err(err), true));
@@ -1999,6 +2426,7 @@ class FrigoMalinPanel extends HTMLElement {
       case "store-pick":
         this._pickStore(d.id);
         this._renderListParts();
+        if (this.top && this.top.type === "store-mode") this._renderOverlay();
         return;
 
       /* Photo d'une page de livre */
@@ -2138,6 +2566,15 @@ class FrigoMalinPanel extends HTMLElement {
         if (deleted) this._render();
         return;
       }
+      case "recipes-layout":
+        this._layout = this.recipesLayout === "grid" ? "list" : "grid";
+        try {
+          localStorage.setItem("frigo-malin-layout", this._layout);
+        } catch (_) {
+          /* stockage local indisponible */
+        }
+        this._render();
+        return;
       case "filter":
         s.filter = d.value;
         this._render();
@@ -2213,10 +2650,31 @@ class FrigoMalinPanel extends HTMLElement {
           this._consumeAfterCook(this._overlayRecipe());
         }
         this._renderOverlay();
+        this._afterCookStep();
         return;
       }
       case "cook-goto":
         this.top.step = Number(d.step);
+        this._renderOverlay();
+        this._afterCookStep();
+        return;
+      case "cook-speak":
+        this._voice.speak = !this._voice.speak;
+        try {
+          localStorage.setItem("frigo-malin-cook-speak", this._voice.speak ? "1" : "");
+        } catch (_) {
+          /* stockage indisponible */
+        }
+        if (this._voice.speak) this._speak(this._cookText());
+        else if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+        this._renderOverlay();
+        return;
+      case "cook-listen":
+        if (this._voice.listen) this._stopListening();
+        else if (this._startListening()) {
+          this._voice.listen = true;
+          this._toast("🎙️ Dites « suivant » pour passer à l'étape suivante");
+        }
         this._renderOverlay();
         return;
       case "cook-ing":
@@ -2799,7 +3257,7 @@ class FrigoMalinPanel extends HTMLElement {
 
   _tplJowResults(top) {
     if (top.error) return `<div class="alert">${esc(top.error)}</div>`;
-    if (!top.jow) return `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`;
+    if (!top.jow) return skel("cards", 5);
     const list = top.jow.recipes;
     if (!list.length) return `<div class="empty"><div class="emoji">🔍</div><p>Aucune recette Jow ne correspond.</p></div>`;
     return `${top.jowQuery ? "" : `<p class="muted small" style="margin:0 0 8px">${top.jow.total} recettes Jow. Cherchez un plat ou un ingrédient.</p>`}
@@ -3432,6 +3890,142 @@ class FrigoMalinPanel extends HTMLElement {
       this._requestWakeLock();
       this._tickTimers();
     }
+    if (this.s.stack.some((x) => x.type === "store-mode")) this._requestWakeLock();
+    if (this._loadOps().length) this._flushOps();
+  }
+
+  /* ---------------- mode cuisine mains libres : lecture à voix haute et commandes vocales */
+
+  get _voice() {
+    if (!this._voiceState) {
+      let speak = false;
+      try {
+        speak = localStorage.getItem("frigo-malin-cook-speak") === "1";
+      } catch (_) {
+        /* stockage indisponible */
+      }
+      this._voiceState = { speak, listen: false };
+    }
+    return this._voiceState;
+  }
+
+  /* Ce qu'on lit pour l'étape affichée. */
+  _cookText(top = this.top) {
+    const r = this._overlayRecipe();
+    if (!r || !top || top.type !== "cook") return "";
+    const total = r.steps.length;
+    const base = r.servings || top.servings || 4;
+    const factor = (top.servings || base) / base;
+    const spoken = (text) =>
+      String(text)
+        .replace(/\bc\. à soupe\b/g, "cuillère à soupe")
+        .replace(/\bc\. à café\b/g, "cuillère à café")
+        .replace(/(\d)\s*g\b/g, "$1 grammes")
+        .replace(/(\d)\s*kg\b/g, "$1 kilos")
+        .replace(/(\d)\s*cl\b/g, "$1 centilitres")
+        .replace(/(\d)\s*ml\b/g, "$1 millilitres")
+        .replace(/(\d)\s*min\b/g, "$1 minutes");
+    if (top.step < 0) {
+      const ings = r.ingredients.map((ing) => {
+        const f = fmtIngredient(ing, factor);
+        return `${f.amount} ${f.name}`.trim();
+      });
+      return spoken(`Mise en place pour ${r.title}. Il vous faut : ${ings.join(", ")}.`);
+    }
+    if (top.step >= total) return "C'est prêt ! Bon appétit.";
+    return spoken(`Étape ${top.step + 1}${top.step + 1 === total ? ", la dernière" : ""}. ${r.steps[top.step]}`);
+  }
+
+  _speak(text) {
+    if (!("speechSynthesis" in window) || !text) return;
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const say = new SpeechSynthesisUtterance(text);
+    say.lang = "fr-FR";
+    const voice = synth.getVoices().find((v) => v.lang && v.lang.toLowerCase().startsWith("fr"));
+    if (voice) say.voice = voice;
+    // Pendant la lecture, le micro ignore ce qu'il entend (sinon « étape suivante » relancerait la suivante).
+    this._speakingUntil = Date.now() + 120000;
+    say.onend = say.onerror = () => {
+      this._speakingUntil = Date.now() + 800;
+    };
+    synth.speak(say);
+  }
+
+  _afterCookStep() {
+    if (this._voice.speak && this.top && this.top.type === "cook") this._speak(this._cookText());
+  }
+
+  _startListening() {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      this._toast("La commande vocale n'est pas disponible ici. Elle marche dans Safari ou Chrome (ouvrez Home Assistant dans le navigateur).", true);
+      return false;
+    }
+    const rec = new Recognition();
+    rec.lang = "fr-FR";
+    rec.continuous = true;
+    rec.interimResults = false;
+    rec.onresult = (ev) => {
+      for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) this._voiceCommand(ev.results[i][0].transcript);
+    };
+    rec.onerror = (ev) => {
+      if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+        this._stopListening();
+        this._toast("Micro refusé : autorisez-le pour piloter la recette à la voix.", true);
+        this._renderOverlay();
+      }
+    };
+    // Le navigateur coupe l'écoute de temps en temps : on la relance tant que le mode cuisine est ouvert.
+    rec.onend = () => {
+      if (this._voice.listen && this._rec === rec && this.s.stack.some((x) => x.type === "cook")) {
+        try {
+          rec.start();
+        } catch (_) {
+          /* déjà relancée */
+        }
+      }
+    };
+    try {
+      rec.start();
+    } catch (_) {
+      return false;
+    }
+    this._rec = rec;
+    return true;
+  }
+
+  _stopListening() {
+    this._voice.listen = false;
+    const rec = this._rec;
+    this._rec = null;
+    if (rec) {
+      rec.onend = null;
+      try {
+        rec.stop();
+      } catch (_) {
+        /* déjà arrêtée */
+      }
+    }
+  }
+
+  _voiceCommand(raw) {
+    if (Date.now() < (this._speakingUntil || 0)) return;
+    const top = this.top;
+    if (!top || top.type !== "cook") return;
+    const t = ` ${foldText(raw)} `;
+    const r = this._overlayRecipe();
+    if (/ (suivant|suivante|ensuite|apres|continue|continuer|c est bon|next) /.test(t)) this._dispatch("cook-next", { dataset: {} });
+    else if (/ (precedent|precedente|retour|recule|reviens) /.test(t)) this._dispatch("cook-prev", { dataset: {} });
+    else if (/ (repete|repeter|encore|redis|relis|quoi) /.test(t)) this._speak(this._cookText());
+    else if (/ (minuteur|chrono|chronometre|timer) /.test(t)) {
+      const dur = r && top.step >= 0 && r.steps[top.step] ? stepDuration(r.steps[top.step]) : null;
+      if (dur) {
+        this._startTimer(dur.seconds, `Étape ${top.step + 1} · ${dur.label}`);
+        this._speak(`Minuteur de ${dur.label} lancé.`);
+      } else this._speak("Pas de minuteur pour cette étape.");
+    } else if (/ (ingredient|ingredients) /.test(t)) this._speak(this._cookText({ ...top, step: -1 }));
+    else if (/ (stop|silence|arrete|tais toi) /.test(t) && "speechSynthesis" in window) window.speechSynthesis.cancel();
   }
 
   async _requestWakeLock() {
@@ -3469,16 +4063,18 @@ class FrigoMalinPanel extends HTMLElement {
     }
     requestAnimationFrame(() => this._fitHeight());
     if (!root.querySelector(".app")) {
-      root.innerHTML = `<style>${STYLES}</style><div class="app"><div id="header"></div><main id="main"></main><nav class="tabs" id="nav"></nav><div id="overlay"></div><div id="toast"></div><div id="dialog"></div></div>`;
+      root.innerHTML = `<style>${STYLES}</style><div class="app"><div id="header"></div><main id="main"></main><nav class="tabs" id="nav"></nav><div id="plus"></div><input class="hidden-input" id="plus-cam" type="file" accept="image/*" capture="environment" data-change="photo"><div id="overlay"></div><div id="toast"></div><div id="dialog"></div></div>`;
     }
     const main = root.getElementById("main");
     const scroll = main.scrollTop;
     root.getElementById("header").innerHTML = this._tplHeader();
-    main.innerHTML = `<div class="page">${this._tplTab()}</div>`;
-    main.scrollTop = scroll;
+    main.innerHTML = `<div class="page ${this._tabAnim ? "tab-enter" : ""}">${this._tplTab()}</div>`;
+    main.scrollTop = this._tabAnim ? 0 : scroll;
+    this._tabAnim = false;
     root.getElementById("nav").innerHTML = this._tplNav();
     this._renderOverlay();
     this._renderToast();
+    this._saveCache();
   }
 
   _renderOverlay() {
@@ -3516,7 +4112,7 @@ class FrigoMalinPanel extends HTMLElement {
     if (!host) return;
     const t = this.s.toast;
     host.innerHTML = t
-      ? `<div class="toast ${t.error ? "error" : ""} ${this.s.stack.length ? "high" : ""}" role="status">${icon(t.error ? "alert-circle-outline" : "check-circle-outline")}<span>${esc(t.message)}</span></div>`
+      ? `<div class="toast ${t.error ? "error" : ""} ${this.s.stack.length ? "high" : ""}" role="status">${icon(t.error ? "alert-circle-outline" : "check-circle-outline")}<span>${esc(t.message)}</span>${t.action ? `<button class="toast-act" data-action="toast-action">${esc(t.action.label)}</button>` : ""}</div>`
       : "";
   }
 
@@ -3535,7 +4131,6 @@ class FrigoMalinPanel extends HTMLElement {
       ${this._narrow ? `<button class="icon-btn" data-action="menu" aria-label="Menu">${icon("menu")}</button>` : `<span style="width:12px"></span>`}
       ${LOGO_SVG}
       <div class="title app-title" style="margin-left:10px">Frigo Malin<small>par Adri</small></div>
-      ${this.listEntity ? `<button class="icon-btn cart" data-action="quick-open" aria-label="Ajout rapide à la liste de courses" title="Ajout rapide">${icon("cart-plus")}</button>` : ""}
       ${this.s.config ? `<button class="icon-btn" data-action="settings-open" aria-label="Réglages du foyer" title="Réglages du foyer">${icon("cog-outline")}</button>` : ""}
     </div>`;
   }
@@ -3543,18 +4138,39 @@ class FrigoMalinPanel extends HTMLElement {
   _tplNav() {
     const tabs = [
       ["home", "home-outline", "home", "Accueil"],
-      ["fridge", "fridge-outline", "fridge", "Frigo"],
       ["recipes", "book-open-page-variant-outline", "book-open-page-variant", "Recettes"],
+      ["plus"],
       ["week", "calendar-week-outline", "calendar-week", "Semaine"],
       ["shopping", "cart-outline", "cart", "Courses"],
     ];
     const pending = this.pendingItems.length;
+    // Le frigo est une sous-page de l'accueil.
+    const current = this.s.tab === "fridge" ? "home" : this.s.tab;
     return `<div class="inner">${tabs
-      .map(
-        ([key, ic, icActive, label]) =>
-          `<button class="${this.s.tab === key ? "active" : ""}" data-action="tab" data-tab="${key}" aria-label="${label}"><span class="pill">${icon(this.s.tab === key ? icActive : ic)}${key === "shopping" && pending ? `<span class="badge">${pending > 99 ? "99+" : pending}</span>` : ""}</span>${label}</button>`
+      .map(([key, ic, icActive, label]) =>
+        key === "plus"
+          ? `<div class="plus-slot"><button class="plus ${this.s.plusOpen ? "open" : ""}" data-action="plus-toggle" aria-label="Ajouter" aria-expanded="${Boolean(this.s.plusOpen)}">${icon("plus")}</button></div>`
+          : `<button class="${current === key ? "active" : ""}" data-action="tab" data-tab="${key}" aria-label="${label}"><span class="pill">${icon(current === key ? icActive : ic)}${key === "shopping" && pending ? `<span class="badge">${pending > 99 ? "99+" : pending}</span>` : ""}</span>${label}</button>`
       )
       .join("")}</div>`;
+  }
+
+  /* Menu du bouton + : deux raccourcis, au-dessus de la barre du bas. */
+  _tplPlusMenu() {
+    if (!this.s.plusOpen) return "";
+    return `<div class="plus-backdrop" data-action="plus-toggle"></div>
+      <div class="plus-menu" role="menu">
+        <button class="plus-item" data-action="plus-photo" role="menuitem">${bubble("camera-outline", COLORS.teal)}<span><b>Photo du frigo</b><small>Je reconnais ce qu'il contient</small></span></button>
+        <button class="plus-item" data-action="plus-quick" role="menuitem">${bubble("cart-plus", COLORS.green)}<span><b>Ajout rapide</b><small>Un article pour les courses</small></span></button>
+      </div>`;
+  }
+
+  _setPlus(open) {
+    this.s.plusOpen = open;
+    const host = this.shadowRoot.getElementById("plus");
+    if (host) host.innerHTML = this._tplPlusMenu();
+    const nav = this.shadowRoot.getElementById("nav");
+    if (nav) nav.innerHTML = this._tplNav();
   }
 
   _tplVersion() {
@@ -3662,11 +4278,11 @@ class FrigoMalinPanel extends HTMLElement {
       <div class="card">
         <div class="home-head">${bubble("silverware-fork-knife", COLORS.orange)}<h3>Au menu</h3>
           <button class="btn text" data-action="home-go" data-tab="week">Semaine ${icon("chevron-right")}</button></div>
-        ${this.s.home.loaded ? meal : `<div class="spinner sm"></div>`}
+        ${this.s.home.loaded ? meal : skel("block")}
       </div>
       <div class="card ${urgent.length ? "memory" : ""}">
         <div class="home-head">${bubble("fridge-outline", COLORS.teal)}<h3>Mon frigo</h3>
-          ${mem.items.length ? `<button class="btn text" data-action="home-go" data-tab="fridge">Voir ${icon("chevron-right")}</button>` : ""}</div>
+          <button class="btn text" data-action="home-go" data-tab="fridge">${mem.items.length ? "Voir" : "Ouvrir"} ${icon("chevron-right")}</button></div>
         ${fridge}
       </div>
       ${this.listEntity ? `<div class="card" id="home-shopping">${this._tplHomeShopping()}</div>` : ""}
@@ -3712,7 +4328,7 @@ class FrigoMalinPanel extends HTMLElement {
           : `<p class="muted small" style="margin:0 0 12px">La liste est vide.</p>`}
         <div class="row" style="gap:8px">
           <button class="btn tonal grow" data-action="home-go" data-tab="shopping">${icon("format-list-checks")} Voir la liste</button>
-          ${stores.length && pending.length ? `<button class="btn tonal grow" data-action="home-go" data-tab="shopping" data-store="${esc(stores[0].id)}">🏪 Au magasin</button>` : ""}
+          ${stores.length && pending.length ? `<button class="btn tonal grow" data-action="store-mode" data-store="${esc(stores[0].id)}">🏪 Au magasin</button>` : ""}
         </div>`;
   }
 
@@ -3903,29 +4519,24 @@ class FrigoMalinPanel extends HTMLElement {
       return `<div class="alert">Aucune liste de courses disponible. Choisissez-en une dans ⚙️ Réglages du foyer → Portions et liste de courses.</div>`;
     }
     if (l.error) return `<div class="alert">${esc(l.error)}</div>`;
-    if (!l.loaded) return `<div class="empty"><div class="spinner" style="margin:0 auto"></div></div>`;
+    if (!l.loaded) return skel("lines", 6);
     const pending = this.pendingItems;
     const done = l.items.filter((i) => i.status === "completed");
-    const row = (item) => `<div class="li ${item.status === "completed" ? "done" : ""}">
+    const row = (item) => `<div class="li-wrap" data-lswipe="${esc(item.uid)}">${this._tplSwipeBg(item)}<div class="li ${item.status === "completed" ? "done" : ""} ${item.offline ? "offline" : ""}">
         <button class="tick" data-action="list-toggle" data-uid="${esc(item.uid)}" aria-label="${item.status === "completed" ? "Remettre dans la liste" : "Dans le panier"}">${icon("check")}</button>
         <span class="ing-emoji">${ingEmoji(item.summary)}</span>
         ${l.editing === item.uid
           ? `<input class="input li-edit grow" value="${esc(item.summary)}" data-edit="list" data-uid="${esc(item.uid)}" data-enter="list-rename" enterkeyhint="done" aria-label="Modifier l'article">`
           : `<div class="txt" data-action="list-edit" data-uid="${esc(item.uid)}" title="Toucher pour modifier"><div>${esc(item.summary)}</div>${item.description ? `<div class="d">${esc(item.description)}</div>` : ""}</div>`}
         <button class="icon-btn" data-action="list-remove" data-uid="${esc(item.uid)}" aria-label="Supprimer">${icon("close")}</button>
-      </div>`;
+      </div></div>`;
 
-    let html = `<div class="list-head">${bubble("format-list-checks", COLORS.green)}<h3>À acheter</h3><span class="muted small">${pending.length}</span></div>`;
+    let html = `${this._tplOfflineBanner()}<div class="list-head">${bubble("format-list-checks", COLORS.green)}<h3>À acheter</h3><span class="muted small">${pending.length}</span>
+        ${pending.length ? `<button class="btn tonal sm-open" data-action="store-mode">🏪 Mode magasin</button>` : ""}</div>`;
     if (!pending.length) {
       html += `<div class="empty" style="padding:20px 16px"><div class="emoji">🛒</div><p>La liste est vide. Ajoutez un article ci-dessus ou les ingrédients de votre menu.</p></div>`;
     } else {
-      const groups = {};
-      for (const item of pending) (groups[aisleOf(item.summary)] = groups[aisleOf(item.summary)] || []).push(item);
-      const stores = this.settings.stores || [];
-      // Par défaut : le premier magasin créé. « Standard » seulement si on le choisit.
-      const store = l.storeId === "standard" ? null : stores.find((x) => x.id === l.storeId) || stores[0] || null;
-      const byKey = Object.fromEntries(AISLES.map((a) => [a.key, a]));
-      const order = store ? store.aisles.map((k) => byKey[k]).filter(Boolean) : AISLES;
+      const { groups, stores, store, order } = this._aisleGroups(pending);
       html += `<div class="store-pick">
         <span class="lbl">${icon("store-outline")} Rayons :</span>
         <button class="chip ${store ? "" : "on"}" data-action="store-pick" data-id="standard">Standard</button>
@@ -3950,6 +4561,67 @@ class FrigoMalinPanel extends HTMLElement {
         <button class="btn danger block" data-action="list-clear-done">${icon("broom")} Vider le panier</button>`;
     }
     return html;
+  }
+
+  /* Articles rangés par rayon, dans l'ordre du magasin choisi (par défaut le premier créé). */
+  _aisleGroups(items) {
+    const l = this.s.list;
+    const groups = {};
+    for (const item of items) (groups[aisleOf(item.summary)] = groups[aisleOf(item.summary)] || []).push(item);
+    const stores = this.settings.stores || [];
+    const store = l.storeId === "standard" ? null : stores.find((x) => x.id === l.storeId) || stores[0] || null;
+    const byKey = Object.fromEntries(AISLES.map((a) => [a.key, a]));
+    const order = store ? store.aisles.map((k) => byKey[k]).filter(Boolean) : AISLES;
+    return { groups, stores, store, order };
+  }
+
+  _tplSwipeBg(item) {
+    return `<div class="li-bg"><span class="ok">${icon(item.status === "completed" ? "undo" : "cart-check")} ${item.status === "completed" ? "Remettre" : "Dans le panier"}</span><span class="del">Supprimer ${icon("delete-outline")}</span></div>`;
+  }
+
+  /* ---------------- mode magasin : plein écran, gros boutons, écran allumé */
+
+  _tplStoreProgress() {
+    const total = this.s.list.items.length;
+    const done = this.s.list.items.filter((i) => i.status === "completed").length;
+    const pct = total ? Math.round((done * 100) / total) : 0;
+    return `<div class="bar"><i style="width:${pct}%"></i></div><span>${done} / ${total} dans le panier</span>`;
+  }
+
+  _tplStoreList() {
+    const l = this.s.list;
+    const pending = this.pendingItems;
+    const done = l.items.filter((i) => i.status === "completed");
+    const row = (item) => `<div class="li-wrap" data-lswipe="${esc(item.uid)}">${this._tplSwipeBg(item)}
+      <button class="li sm-row ${item.status === "completed" ? "done" : ""}" data-action="list-toggle" data-uid="${esc(item.uid)}">
+        <span class="tick">${icon("check")}</span><span class="ing-emoji">${ingEmoji(item.summary)}</span><span class="txt">${esc(item.summary)}${item.description ? `<small>${esc(item.description)}</small>` : ""}</span>
+      </button></div>`;
+    let html = this._tplOfflineBanner();
+    if (!pending.length) {
+      html += `<div class="card sm-done"><div class="emoji">🎉</div><h3>Tout est dans le panier !</h3>
+        ${done.length ? `<button class="btn big block" data-action="store-finish">🧹 Vider le panier et terminer</button>` : `<button class="btn big block" data-action="close">Terminer</button>`}</div>`;
+    } else {
+      const { groups, order } = this._aisleGroups(pending);
+      for (const aisle of order) {
+        const items = groups[aisle.key];
+        if (!items) continue;
+        html += `<div class="sm-aisle"><div class="sm-aisle-t">${aisle.emoji} ${aisle.label}<span>${items.length}</span></div>${items.map(row).join("")}</div>`;
+      }
+    }
+    if (done.length) html += `<div class="sm-aisle sm-basket"><div class="sm-aisle-t">🛒 Dans le panier<span>${done.length}</span></div>${done.map(row).join("")}</div>`;
+    return html;
+  }
+
+  _tplStoreMode() {
+    const { stores, store } = this._aisleGroups([]);
+    const body = `
+      <div class="sm-progress" id="sm-progress">${this._tplStoreProgress()}</div>
+      ${stores.length > 1 ? `<div class="chips scroll" style="margin-bottom:12px">${stores.map((x) => `<button class="chip ${store && store.id === x.id ? "on" : ""}" data-action="store-pick" data-id="${esc(x.id)}">🏪 ${esc(x.name)}</button>`).join("")}</div>` : ""}
+      <p class="muted small" style="margin:0 0 10px">Touchez un article pour le mettre dans le panier · balayez à gauche pour le supprimer.</p>
+      <div id="store-list">${this._tplStoreList()}</div>`;
+    const footer = `<button class="btn tonal grow" data-action="quick-open">${icon("plus")} Un article</button>
+      <button class="btn grow" data-action="close">${icon("check")} Terminer</button>`;
+    return this._tplSheet(`🏪 ${store ? store.name : "Mode magasin"}`, body, footer);
   }
 
   _tplShopping() {
@@ -4083,6 +4755,12 @@ class FrigoMalinPanel extends HTMLElement {
         ${this._tplSwitch("top.draft.plan_slots.lunch_weekend", d.plan_slots.lunch_weekend, "☀️ Midi le week-end")}
         ${this._tplSwitch("top.draft.plan_slots.dinner_weekend", d.plan_slots.dinner_weekend, "🌙 Soir le week-end")}
       </div>
+      <div class="set-sec">${bubble("clock-outline", COLORS.indigo)}<h3>Heures des repas</h3></div>
+      <div class="row" style="gap:10px">
+        <label class="field grow"><span>☀️ Midi</span><input class="input" type="time" value="${esc(d.lunch_time || "12:00")}" data-model="top.draft.lunch_time"></label>
+        <label class="field grow"><span>🌙 Soir</span><input class="input" type="time" value="${esc(d.dinner_time || "19:30")}" data-model="top.draft.dinner_time"></label>
+      </div>
+      <p class="muted small" style="margin-top:-6px">Le menu apparaît dans le calendrier de Home Assistant (« Frigo Malin menu ») : chaque repas commence quand il faut se mettre aux fourneaux et finit à l'heure du repas. Pratique pour une automatisation « 30 min avant le dîner… ».</p>
       <div class="set-sec">${bubble("timer-outline", COLORS.orange)}<h3>Temps en cuisine</h3></div>
       <div class="row wrap" style="justify-content:space-between;margin-bottom:12px">
         <span class="muted small">En semaine (prépa + cuisson)</span>${this._tplStepper("top.draft.time_weekday", d.time_weekday, "min", 10, 240, 5)}
@@ -4509,9 +5187,12 @@ class FrigoMalinPanel extends HTMLElement {
         <button class="btn tonal grow" data-action="import-open">${icon("download")} Importer</button>
         <button class="btn tonal grow" data-action="book-open">${icon("book-open-variant")} Photo</button>
       </div>
-      <div class="search">
-        ${icon("magnify")}
-        <input class="input" type="search" placeholder="Chercher une recette, un ingrédient…" value="${esc(this.s.search)}" data-model="search" data-live="recipes">
+      <div class="row search-row">
+        <div class="search grow">
+          ${icon("magnify")}
+          <input class="input" type="search" placeholder="Chercher une recette, un ingrédient…" value="${esc(this.s.search)}" data-model="search" data-live="recipes">
+        </div>
+        <button class="icon-btn layout-btn" data-action="recipes-layout" aria-label="${this.recipesLayout === "grid" ? "Afficher en liste" : "Afficher en grille"}" title="${this.recipesLayout === "grid" ? "Liste" : "Grille"}">${icon(this.recipesLayout === "grid" ? "view-list-outline" : "view-grid-outline")}</button>
       </div>
       <div class="chips scroll filters" style="margin-bottom:14px">
         <button class="chip ${f === "all" ? "on" : ""}" data-action="filter" data-value="all">Toutes</button>
@@ -4529,12 +5210,42 @@ class FrigoMalinPanel extends HTMLElement {
       : `<div class="thumb" style="background:hsl(${hashHue(r.title)} 60% 50% / .15)">${emojiFor(r.title)}</div>`;
   }
 
+  get recipesLayout() {
+    if (this._layout) return this._layout;
+    try {
+      this._layout = localStorage.getItem("frigo-malin-layout") || "grid";
+    } catch (_) {
+      this._layout = "grid";
+    }
+    return this._layout;
+  }
+
+  /* Carte photo du carnet : photo (ou dégradé + emoji), titre sur dégradé, temps et calories. */
+  _tplRecipeCard(r) {
+    const img = safeUrl(r.image);
+    const time = totalTime(r);
+    const hue = hashHue(r.title || "recette");
+    const meta = [time ? `⏱ ${fmtMinutes(time)}` : "", r.nutrition && r.nutrition.kcal ? `🔥 ${r.nutrition.kcal}` : ""].filter(Boolean).join(" · ");
+    return `<div class="rcard">
+      <button class="rcard-open" data-action="open-recipe" data-id="${esc(r.id)}" aria-label="${esc(r.title)}">
+        ${img
+          ? `<img src="${esc(img)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
+          : `<span class="rcard-bg" style="background:linear-gradient(135deg,hsl(${hue} 65% 55%),hsl(${(hue + 40) % 360} 70% 40%))"><span>${emojiFor(r.title)}</span></span>`}
+        <span class="rcard-shade"></span>
+        <span class="rcard-text"><span class="t">${esc(r.title)}</span>${meta ? `<span class="m">${meta}</span>` : ""}</span>
+      </button>
+      <button class="rcard-fav ${r.favorite ? "on" : ""}" data-action="swipe-fav" data-id="${esc(r.id)}" aria-label="${r.favorite ? "Retirer des favoris" : "Mettre en favori"}">${icon(r.favorite ? "star" : "star-outline")}</button>
+    </div>`;
+  }
+
   _tplRecipeItems() {
+    if (!this.s.loaded && !this.s.recipes.length) return skel(this.recipesLayout === "grid" ? "grid" : "cards", 4);
     if (!this.s.recipes.length) {
       return `<div class="empty"><div class="emoji">📖</div><p>Votre carnet est vide.<br>Ajoutez une recette, importez un lien Marmiton, ou partez d'une photo du frigo.</p></div>`;
     }
     const list = this._filteredRecipes();
     if (!list.length) return `<div class="empty"><p>Aucune recette ne correspond.</p></div>`;
+    if (this.recipesLayout === "grid") return `<div class="rgrid">${list.map((r) => this._tplRecipeCard(r)).join("")}</div>`;
     return list
       .map((r) => {
         const time = totalTime(r);
@@ -4686,6 +5397,8 @@ class FrigoMalinPanel extends HTMLElement {
         return this._tplQuickSheet();
       case "settings":
         return this._tplSettings(top);
+      case "store-mode":
+        return this._tplStoreMode(top);
       case "member":
         return this._tplMember(top);
       case "store":
@@ -4854,10 +5567,13 @@ class FrigoMalinPanel extends HTMLElement {
       <div class="toolbar">
         <button class="icon-btn" data-action="close" aria-label="Quitter le mode cuisine">${icon("close")}</button>
         <div class="title">👩‍🍳 ${esc(r.title)}</div>
+        <button class="icon-btn ${this._voice.speak ? "on" : ""}" data-action="cook-speak" aria-label="${this._voice.speak ? "Arrêter la lecture à voix haute" : "Lire les étapes à voix haute"}" title="Lecture à voix haute">${icon(this._voice.speak ? "volume-high" : "volume-off")}</button>
+        <button class="icon-btn ${this._voice.listen ? "on" : ""}" data-action="cook-listen" aria-label="${this._voice.listen ? "Arrêter la commande vocale" : "Commande vocale"}" title="Commande vocale">${icon(this._voice.listen ? "microphone" : "microphone-off")}</button>
         <button class="icon-btn" data-action="cook-big" aria-label="Taille du texte" title="Taille du texte">${icon(top.big ? "format-font-size-decrease" : "format-font-size-increase")}</button>
         <button class="icon-btn" data-action="cook-ing" aria-label="Ingrédients" title="Ingrédients">${icon(top.showIng ? "close-box-outline" : "basket-outline")}</button>
       </div>
       ${step >= 0 && !done ? `<div class="dots">${dots}</div>` : ""}
+      ${this._voice.listen ? `<div class="voice-hint"><span class="mic-dot"></span> J'écoute : « suivant », « répète », « minuteur »</div>` : ""}
       <div class="timers" id="cook-timers" style="${(this._timers || []).length ? "" : "display:none"}">${this._tplTimers()}</div>
       ${top.showIng ? `<div class="ingpanel"><ul class="ings">${r.ingredients.map((ing, i) => ingRow(ing, i, false)).join("")}</ul></div>` : ""}
       <div class="stepbox">${content}</div>

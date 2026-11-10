@@ -7,6 +7,30 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.17.0] – 2026-11-10
+
+### Ajouté
+
+- ➕ **Bouton + au centre de la barre du bas** : 📸 photo du frigo, ou ➕ ajout rapide aux courses. La barre compte maintenant quatre onglets (Accueil, Recettes, Semaine, Courses) ; le frigo s'ouvre depuis l'accueil.
+- 🖼️ **Carnet en grille de photos** : cartes sur deux colonnes avec le titre sur la photo, le temps, les calories et une étoile pour les favoris. Sans photo : dégradé coloré avec l'emoji du plat. Un bouton à côté de la recherche revient à la liste (choix mémorisé).
+- 🛒 **Gestes sur la liste de courses** : balayer un article vers la droite le met dans le panier, vers la gauche le supprime, avec **« Annuler »** pendant 5 secondes.
+- 🏪 **Mode magasin** (bouton dans Courses, « Au magasin » sur l'accueil, ou la notification d'arrivée au magasin) :
+  - plein écran, avec gros boutons ronds et rayons dans l'ordre du magasin ;
+  - barre de progression, et articles cochés qui descendent dans « Dans le panier » ;
+  - l'écran reste allumé ;
+  - « Vider le panier et terminer » à la fin.
+- 📴 **Courses hors connexion** : sans réseau, la liste reste utilisable (cocher, ajouter, renommer, supprimer). Les changements sont gardés sur le téléphone et envoyés dès que la connexion revient.
+- ⚡ **Démarrage instantané** : l'app affiche aussitôt les dernières données connues (recettes, menu, frigo, courses), puis se met à jour.
+- 📅 **Calendrier du menu** dans Home Assistant (« Frigo Malin menu »). Chaque repas commence quand il faut se mettre aux fourneaux et se termine à l'heure du repas. Les heures se règlent dans Réglages → Repas et menus (12 h et 19 h 30 par défaut), et le calendrier sert aussi dans les automatisations.
+- 👩‍🍳 **Cuisine mains libres** :
+  - 🔊 lit chaque étape à voix haute sur le téléphone ;
+  - 🎙️ obéit à « suivant », « précédent », « répète », « minuteur » et « ingrédients » (dans Safari ou Chrome ; l'app Home Assistant ne permet pas toujours l'écoute).
+
+### Modifié
+
+- Animations plus douces à l'arrivée sur un onglet et sur les boutons, et blocs gris animés pendant les chargements à la place des roues qui tournent. Elles sont désactivées si le téléphone demande moins d'animations.
+- L'ajout rapide passe de l'en-tête au bouton +.
+
 ## [1.16.2] – 2026-11-09
 
 ### Corrigé

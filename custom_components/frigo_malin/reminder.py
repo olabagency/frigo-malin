@@ -142,7 +142,7 @@ class StoreReminder:
         more = len(items) - len(names)
         preview = ", ".join(names) + (f" et {more} autre{'s' if more > 1 else ''}" if more > 0 else "")
         list_state = self.hass.states.get(entity_id)
-        url = f"/{PANEL_URL_PATH}?tab=shopping&store={store['id']}"
+        url = f"/{PANEL_URL_PATH}?tab=shopping&store={store['id']}&mode=store"
         payload = {
             "title": f"🛒 {len(items)} article{'s' if len(items) > 1 else ''} à acheter chez {store['name']}",
             "message": preview,

@@ -6,6 +6,7 @@ Ce module n'importe rien de Home Assistant : il est testable seul.
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -94,6 +95,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "ai_mode": "economy",
     # Combien de jours le frigo mémorisé reste valable (0 : jusqu'à la prochaine photo).
     "fridge_days": 5,
+    # Heures des repas (calendrier du menu).
+    "lunch_time": "12:00",
+    "dinner_time": "19:30",
 }
 
 
@@ -115,6 +119,12 @@ def _int(value: Any, low: int, high: int, default: int | None) -> int | None:
     except (TypeError, ValueError):
         return default
     return max(low, min(high, number))
+
+
+def _time(value: Any, default: str) -> str:
+    text = str(value or "").strip()
+    match = re.fullmatch(r"([01]?\d|2[0-3])[:h]([0-5]\d)", text)
+    return f"{int(match.group(1)):02d}:{match.group(2)}" if match else default
 
 
 def normalize_member(raw: dict[str, Any]) -> dict[str, Any]:
@@ -162,6 +172,8 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         "servings": _int(raw.get("servings"), 1, 20, None) if raw.get("servings") not in (None, "") else None,
         "ai_mode": raw.get("ai_mode") if raw.get("ai_mode") in ("economy", "single") else "economy",
         "fridge_days": _int(raw.get("fridge_days", 5), 0, 60, 5),
+        "lunch_time": _time(raw.get("lunch_time"), DEFAULT_SETTINGS["lunch_time"]),
+        "dinner_time": _time(raw.get("dinner_time"), DEFAULT_SETTINGS["dinner_time"]),
         "shopping_entity": raw.get("shopping_entity")
         if isinstance(raw.get("shopping_entity"), str) and raw["shopping_entity"].startswith("todo.")
         else None,

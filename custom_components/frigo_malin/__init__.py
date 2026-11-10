@@ -36,7 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 UPDATE_NOTIFICATION_ID = f"{DOMAIN}_update"
-PLATFORMS = [Platform.SENSOR, Platform.TODO]
+PLATFORMS = [Platform.CALENDAR, Platform.SENSOR, Platform.TODO]
 CARD_URL = f"{STATIC_URL}/frigo-malin-card.js?v={VERSION}"
 
 
