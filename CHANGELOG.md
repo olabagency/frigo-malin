@@ -7,6 +7,18 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.18.0] – 2026-11-10
+
+### Ajouté
+
+- 🥘 **Import Jow : filtres et pages**.
+  - **Type de plat** : Pâtes, Riz & risottos, Salades & bowls, Soupes, Quiches/tartes/pizzas, Burgers & sandwichs, Gratins & plats au four, Currys & mijotés, Desserts, Brunch, Apéro. Chacun affiche son nombre de recettes.
+  - **Options cumulables** : 🌱 Végétarien, 👶 Enfants, 💪 Protéiné, 💚 Healthy, 💨 Air fryer, 🍳 Une seule poêle, 📦 Batch cooking, 🎉 Fêtes.
+  - Les catégories de Jow manquent sur plus d'un tiers des recettes : elles sont complétées d'après le titre et la description.
+  - **Pages** de 20 recettes, avec des boutons ‹ 1 … 4 5 6 … 21 › ; changer de page remonte en haut des résultats.
+  - « Effacer les filtres » d'un appui ; une pastille ✓ « Dans le carnet » signale les recettes déjà importées.
+  - Les recettes sponsorisées ne montrent plus l'étiquette « SPONSO ».
+
 ## [1.17.2] – 2026-11-10
 
 ### Modifié

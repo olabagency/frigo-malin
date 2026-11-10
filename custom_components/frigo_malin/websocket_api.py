@@ -41,7 +41,7 @@ from .timers import async_cancel_timer, async_start_timer
 from .todo import OWN_LIST_ENTITY
 from .importer import RecipeImportError, async_fetch_text, async_import_recipe
 from .jow import SITEMAP_URL, JowCatalog
-from .jow import search as jow_search
+from .jow import browse as jow_browse
 from .household import household_context, household_servings
 from .nutrition import clean_food, compute, food_key, unknown_names, with_nutrition
 from .parsing import (
@@ -956,7 +956,13 @@ async def ws_plan_apply(hass: HomeAssistant, connection: websocket_api.ActiveCon
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "frigo_malin/jow/search", vol.Optional("query", default=""): str}
+    {
+        vol.Required("type"): "frigo_malin/jow/search",
+        vol.Optional("query", default=""): str,
+        vol.Optional("dish", default=""): str,
+        vol.Optional("options", default=[]): [str],
+        vol.Optional("page", default=1): vol.All(int, vol.Range(min=1)),
+    }
 )
 @websocket_api.async_response
 async def ws_jow_search(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
@@ -970,7 +976,8 @@ async def ws_jow_search(hass: HomeAssistant, connection: websocket_api.ActiveCon
             if not catalog.recipes:
                 connection.send_error(msg["id"], "unavailable", "Jow ne répond pas pour le moment. Réessayez plus tard.")
                 return
-    connection.send_result(msg["id"], {"recipes": jow_search(catalog.recipes, msg["query"]), "total": len(catalog.recipes)})
+    result = jow_browse(catalog.recipes, msg["query"], msg["dish"], msg["options"], msg["page"])
+    connection.send_result(msg["id"], {**result, "catalog": len(catalog.recipes)})
 
 
 # ---------------------------------------------------------------- valeurs nutritionnelles

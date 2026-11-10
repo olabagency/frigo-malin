@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.17.2";
+const FM_VERSION = "1.18.0";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -716,6 +716,25 @@ textarea.input { min-height: 120px; resize: vertical; line-height: 1.45; }
 .toast { display: flex; align-items: center; gap: 10px; }
 .toast ha-icon { --mdc-icon-size: 20px; flex-shrink: 0; }
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
+
+/* Jow : filtres et pages */
+.jow-filters { margin-bottom: 8px; }
+.jow-filters .chip { min-height: 34px; padding: 0 12px; font-size: 14px; }
+.jow-filters .chip .n { font-size: 12px; color: var(--fm-text2); margin-left: 2px; }
+.jow-filters .chip.on .n { color: inherit; opacity: .8; }
+.jow-filters.opts .chip { min-height: 30px; font-size: 13px; }
+.jow-filters .chip ha-icon { --mdc-icon-size: 16px; }
+.jow-sum { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 8px; font-size: 13px; color: var(--fm-text2); }
+.jow-sum .btn.text { min-height: 30px; padding: 0 6px; font-size: 13px; }
+.jow-list.loading { opacity: .45; pointer-events: none; transition: opacity .15s; }
+.jow-badges { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.jow-badges .tag.ok { background: color-mix(in srgb, var(--fm-success, #2e9e5b) 16%, transparent); color: var(--fm-success, #2e9e5b); }
+.jow-badges .em { font-size: 14px; letter-spacing: 2px; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 14px 0 6px; flex-wrap: wrap; }
+.pager button { min-width: 38px; height: 38px; padding: 0 8px; border-radius: 19px; border: 1px solid var(--fm-divider); background: var(--fm-card); color: var(--fm-text); font: inherit; font-size: 15px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.pager button.on { background: var(--fm-primary); border-color: var(--fm-primary); color: var(--fm-on-primary, #fff); font-weight: 600; }
+.pager button:disabled { opacity: .35; cursor: default; }
+.pager .gap { color: var(--fm-text2); padding: 0 2px; }
 
 /* Jow */
 .jow-card .m { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1733,6 +1752,7 @@ class FrigoMalinPanel extends HTMLElement {
     if (el.dataset.live === "recipes") this._renderRecipeList();
     if (el.dataset.live === "pick") this._renderPickList();
     if (el.dataset.live === "jow") {
+      if (this.top && this.top.type === "import") this.top.jowPage = 1;
       clearTimeout(this._jowTimer);
       this._jowTimer = setTimeout(() => this._jowSearch(), 300);
     }
@@ -2659,7 +2679,7 @@ class FrigoMalinPanel extends HTMLElement {
         this._renderOverlay();
         return;
       case "import-open":
-        s.stack.push({ type: "import", mode: "jow", url: "", loading: false, error: null, jowQuery: "", jow: null, jowLoading: false });
+        s.stack.push({ type: "import", mode: "jow", url: "", loading: false, error: null, jowQuery: "", jowDish: "", jowOptions: [], jowPage: 1, jow: null, jowLoading: false });
         this._renderOverlay();
         this._jowSearch();
         return;
@@ -2669,6 +2689,30 @@ class FrigoMalinPanel extends HTMLElement {
         this._renderOverlay();
         if (d.value === "url") this.shadowRoot.getElementById("import-url")?.focus();
         else if (!this.top.jow) this._jowSearch();
+        return;
+      case "jow-dish":
+        this.top.jowDish = this.top.jowDish === d.key ? "" : d.key;
+        this.top.jowPage = 1;
+        this._jowSearch();
+        return;
+      case "jow-option": {
+        const list = this.top.jowOptions;
+        const i = list.indexOf(d.key);
+        if (i >= 0) list.splice(i, 1);
+        else list.push(d.key);
+        this.top.jowPage = 1;
+        this._jowSearch();
+        return;
+      }
+      case "jow-clear":
+        this.top.jowDish = "";
+        this.top.jowOptions = [];
+        this.top.jowPage = 1;
+        this._jowSearch();
+        return;
+      case "jow-page":
+        this.top.jowPage = Number(d.page);
+        this._jowSearch(true);
         return;
       case "jow-import":
         this.top.url = d.url;
@@ -3300,22 +3344,36 @@ class FrigoMalinPanel extends HTMLElement {
     }
   }
 
-  async _jowSearch() {
+  async _jowSearch(toTop = false) {
     const top = this.top;
     if (!top || top.type !== "import") return;
-    const query = top.jowQuery || "";
+    const ticket = (this._jowTicket = (this._jowTicket || 0) + 1);
     top.jowLoading = true;
     this._renderJowResults();
     try {
-      const res = await this._ws("jow/search", { query });
-      if (this.top !== top || top.jowQuery !== query) return;
+      const res = await this._ws("jow/search", {
+        query: top.jowQuery || "",
+        dish: top.jowDish || "",
+        options: top.jowOptions || [],
+        page: top.jowPage || 1,
+      });
+      // Une réponse plus ancienne qu'une autre recherche est ignorée.
+      if (this.top !== top || ticket !== this._jowTicket) return;
       top.jow = res;
+      top.jowPage = res.page;
       top.error = null;
     } catch (err) {
+      if (ticket !== this._jowTicket) return;
       top.error = this._err(err);
     }
     top.jowLoading = false;
     this._renderJowResults();
+    if (toTop) {
+      // Nouvelle page : on remonte en haut des résultats.
+      const body = this.shadowRoot.querySelector("#overlay .sheet .body");
+      const el = this.shadowRoot.getElementById("jow-results");
+      if (body && el) body.scrollBy({ top: el.getBoundingClientRect().top - body.getBoundingClientRect().top - 8 });
+    }
   }
 
   _renderJowResults() {
@@ -3326,18 +3384,65 @@ class FrigoMalinPanel extends HTMLElement {
   _tplJowResults(top) {
     if (top.error) return `<div class="alert">${esc(top.error)}</div>`;
     if (!top.jow) return skel("cards", 5);
-    const list = top.jow.recipes;
-    if (!list.length) return `<div class="empty"><div class="emoji">🔍</div><p>Aucune recette Jow ne correspond.</p></div>`;
-    return `${top.jowQuery ? "" : `<p class="muted small" style="margin:0 0 8px">${top.jow.total} recettes Jow. Cherchez un plat ou un ingrédient.</p>`}
-      ${list
-        .map(
-          (r) => `<button class="lib-card jow-card" data-action="jow-import" data-url="${esc(r.url)}" ${top.loading ? "disabled" : ""}>
+    const res = top.jow;
+    const dishes = res.dishes || [];
+    const options = res.options || [];
+    const optionEmoji = Object.fromEntries(options.map((o) => [o.key, o.emoji]));
+    const inCarnet = new Set(this.s.recipes.map((r) => r.source_url).filter(Boolean));
+    const filtered = Boolean(top.jowDish || (top.jowOptions || []).length);
+    const filters = `
+      <div class="chips scroll jow-filters">
+        <button class="chip ${!top.jowDish ? "on" : ""}" data-action="jow-dish" data-key="${esc(top.jowDish || "")}">Tout</button>
+        ${dishes
+          .filter((x) => x.count || x.key === top.jowDish)
+          .map((x) => `<button class="chip ${top.jowDish === x.key ? "on" : ""}" data-action="jow-dish" data-key="${x.key}">${x.emoji} ${esc(x.label)} <span class="n">${x.count}</span></button>`)
+          .join("")}
+      </div>
+      <div class="chips scroll jow-filters opts">
+        ${options
+          .filter((x) => x.count || (top.jowOptions || []).includes(x.key))
+          .map((x) => {
+            const on = (top.jowOptions || []).includes(x.key);
+            return `<button class="chip ${on ? "on" : ""}" data-action="jow-option" data-key="${x.key}">${on ? icon("check") : x.emoji} ${esc(x.label)}</button>`;
+          })
+          .join("")}
+      </div>`;
+    const summary = `<div class="jow-sum"><span>${res.total} recette${res.total > 1 ? "s" : ""}${res.pages > 1 ? ` · page ${res.page} / ${res.pages}` : ""}</span>
+      ${filtered ? `<button class="btn text" data-action="jow-clear">${icon("filter-remove-outline")} Effacer les filtres</button>` : ""}</div>`;
+    if (!res.recipes.length) {
+      return `${filters}${summary}<div class="empty"><div class="emoji">🔍</div><p>Aucune recette Jow ne correspond${filtered ? " à ces filtres" : ""}.</p></div>`;
+    }
+    const cards = res.recipes
+      .map((r) => {
+        const badges = (r.cats || []).filter((c) => optionEmoji[c] && ["veggie", "kids", "airfryer", "onepan", "healthy"].includes(c)).map((c) => optionEmoji[c]).join(" ");
+        return `<button class="lib-card jow-card" data-action="jow-import" data-url="${esc(r.url)}" ${top.loading ? "disabled" : ""}>
             ${safeUrl(r.image) ? `<img class="thumb" src="${esc(safeUrl(r.image))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="thumb">${emojiFor(r.title)}</div>`}
-            <div class="grow"><div class="t">${esc(r.title)}</div><div class="m">${esc(r.description)}</div></div>
+            <div class="grow"><div class="t">${esc(r.title)}</div><div class="m">${esc(r.description)}</div>
+              ${badges || inCarnet.has(r.url) ? `<div class="jow-badges">${inCarnet.has(r.url) ? `<span class="tag ok">✓ Dans le carnet</span>` : ""}${badges ? `<span class="em">${badges}</span>` : ""}</div>` : ""}</div>
             ${top.loading && top.importing === r.url ? `<span class="spinner sm"></span>` : icon("download")}
-          </button>`
-        )
-        .join("")}`;
+          </button>`;
+      })
+      .join("");
+    return `${filters}${summary}<div class="jow-list ${top.jowLoading ? "loading" : ""}">${cards}</div>${this._tplPager(res.page, res.pages)}`;
+  }
+
+  /* Pages : ‹ 1 … 4 5 6 … 21 › */
+  _tplPager(page, pages) {
+    if (pages <= 1) return "";
+    const nums = new Set([1, pages, page - 1, page, page + 1].filter((n) => n >= 1 && n <= pages));
+    const sorted = [...nums].sort((a, b) => a - b);
+    let html = "";
+    let last = 0;
+    for (const n of sorted) {
+      if (n - last > 1) html += `<span class="gap">…</span>`;
+      html += `<button class="${n === page ? "on" : ""}" data-action="jow-page" data-page="${n}" ${n === page ? 'aria-current="page"' : ""}>${n}</button>`;
+      last = n;
+    }
+    return `<nav class="pager" aria-label="Pages">
+      <button class="arrow" data-action="jow-page" data-page="${page - 1}" ${page <= 1 ? "disabled" : ""} aria-label="Page précédente">${icon("chevron-left")}</button>
+      ${html}
+      <button class="arrow" data-action="jow-page" data-page="${page + 1}" ${page >= pages ? "disabled" : ""} aria-label="Page suivante">${icon("chevron-right")}</button>
+    </nav>`;
   }
 
   async _import() {
