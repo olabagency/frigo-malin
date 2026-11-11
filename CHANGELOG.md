@@ -7,6 +7,19 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.20.0] – 2026-11-11
+
+### Ajouté
+
+- 🧩 **Cartes de tableau de bord** pour Home Assistant : *Plat du jour*,
+  *Ajout rapide*, *Courses* (à cocher, avec le mode magasin), *Menu de la
+  semaine*, *Calories* et *Mon frigo*. Elles se trouvent en cherchant
+  « Frigo Malin » dans Ajouter une carte, et suivent le thème clair ou sombre.
+
+### Modifié
+
+- La carte « Ce soir on mange » s'appelle désormais *Plat du jour*.
+
 ## [1.19.0] – 2026-11-10
 
 ### Ajouté

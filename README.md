@@ -81,7 +81,13 @@ Chaque photo analysée et chaque série d'idées font un appel à l'IA, facturé
 ## Avec la maison connectée
 
 - **Mode magasin et rappel** : dans ⚙️ Réglages → Magasins, rangez les rayons dans l'ordre de votre magasin et reliez-le à une zone Home Assistant (Paramètres → Zones). Quand quelqu'un y arrive avec l'app Home Assistant sur son téléphone, il reçoit la liste ; un appui l'ouvre, rangée pour ce magasin.
-- **Carte « Ce soir on mange… »** : Modifier le tableau de bord → Ajouter une carte → *Frigo Malin – Ce soir on mange*.
+- **Cartes de tableau de bord** : Modifier le tableau de bord → Ajouter une carte → chercher *Frigo Malin* :
+  - **Plat du jour** : le prochain repas, avec « Cuisiner » ;
+  - **Ajout rapide** : un champ et vos articles habituels (🔁 = à racheter) ;
+  - **Courses** : la liste à cocher, avec le mode magasin ;
+  - **Menu de la semaine** : midi et soir pour les 7 prochains jours ;
+  - **Calories** : macronutriments jour par jour (`period: week`, `month` ou `year`) ;
+  - **Mon frigo** : le contenu et ce qu'il faut consommer vite.
 - **Capteur `sensor.frigo_malin_prochain_repas`** : nom du prochain repas, avec en attributs le créneau (`label` : « Ce soir »…), les portions, les temps, la photo et un lien direct. Exemple d'automatisation : annoncer le repas du soir sur les enceintes à 18 h.
 
 ## Mises à jour

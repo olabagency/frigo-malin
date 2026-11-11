@@ -6,7 +6,7 @@ import asyncio
 import base64
 import binascii
 import logging
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -33,6 +33,7 @@ from .const import (
     DEFAULT_SERVINGS,
     DEFAULT_SHOPPING_ENTITY,
     DOMAIN,
+    PANEL_URL_PATH,
     SLOTS,
     VERSION,
 )
@@ -219,6 +220,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         ws_shopping_history,
         ws_purchase_delete,
         ws_stats_meals,
+        ws_widget_week,
         ws_settings_save,
         ws_recipes_from_photo,
         ws_plan_generate,
@@ -806,6 +808,34 @@ def ws_stats_meals(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     store = _data(hass).store
     result = meal_stats(list(store.plan.values()), store.recipes, store.foods, dt_util.now().date(), msg["period"])
     connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "frigo_malin/widget/week", vol.Optional("days", default=7): vol.All(int, vol.Range(min=1, max=14))}
+)
+@callback
+def ws_widget_week(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Menu des prochains jours, allégé, pour les cartes du tableau de bord."""
+    store = _data(hass).store
+    today = dt_util.now().date()
+    entries = store.plan_between(today, today + timedelta(days=msg["days"] - 1))
+    days = [{"date": (today + timedelta(days=i)).isoformat(), "meals": []} for i in range(msg["days"])]
+    by_date = {d["date"]: d for d in days}
+    for entry in entries:
+        recipe = store.recipes.get(entry["recipe_id"])
+        if recipe is None or entry["date"] not in by_date:
+            continue
+        image = recipe.get("image") or ""
+        by_date[entry["date"]]["meals"].append(
+            {
+                "slot": entry["slot"],
+                "title": recipe["title"],
+                "servings": entry["servings"],
+                "image": image if image.startswith(("http://", "https://", "/frigo_malin_static/")) else "",
+                "url": f"/{PANEL_URL_PATH}?recipe={recipe['id']}&servings={entry['servings']}",
+            }
+        )
+    connection.send_result(msg["id"], {"days": days})
 
 
 # ---------------------------------------------------------------------- réglages du foyer
