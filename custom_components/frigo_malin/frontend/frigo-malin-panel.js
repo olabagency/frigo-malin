@@ -4,7 +4,7 @@
  * Les couleurs viennent du thème de Home Assistant (clair ou sombre).
  */
 
-const FM_VERSION = "1.20.0";
+const FM_VERSION = "1.20.1";
 
 const DAY_MS = 86400000;
 const SLOT_LABELS = { lunch: "Midi", dinner: "Soir" };
@@ -1048,6 +1048,9 @@ select.keep.danger { border-color: var(--fm-error); color: var(--fm-error); font
 
 .ing-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--fm-divider); }
 .ing-row:last-child { border-bottom: 0; }
+.ing-group { margin-bottom: 10px; }
+.ing-group-head { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--fm-text2); padding: 8px 0 2px; border-bottom: 2px solid var(--fm-divider); }
+.ing-group-head span { font-weight: 500; font-size: 12px; padding: 0 7px; border-radius: 9px; background: var(--fm-soft); color: var(--fm-primary); }
 .ing-row input { flex: 1; min-width: 0; border: 0; background: transparent; min-height: 40px; font-size: 16px; outline: none; padding: 0 4px; }
 .ing-row input.amount { flex: 0 0 96px; color: var(--fm-text2); font-size: 14px; text-align: right; }
 .ing-row.mem .ing-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -4911,11 +4914,9 @@ class FrigoMalinPanel extends HTMLElement {
           const urgent = f.ingredients.filter((i) => i.expires && daysLeft(i.expires) <= 2);
           return urgent.length ? `<div class="urgent" style="margin-bottom:8px">⚠️ ${urgent.length} aliment${urgent.length > 1 ? "s" : ""} à consommer vite : les recettes les utiliseront en priorité.</div>` : "";
         })()}
-        <div>
-          ${f.ingredients
-            .map(
-              (ing, i) => f.fromMemory
-                ? `<div class="ing-row mem">
+        ${(() => {
+          const row = (ing, i) => f.fromMemory
+            ? `<div class="ing-row mem">
                 <span class="ing-emoji">${ingEmoji(ing.name)}</span>
                 <div class="ing-main">
                   <input value="${esc(ing.name)}" data-model="fridge.ingredients.${i}.name" aria-label="Ingrédient">
@@ -4924,15 +4925,23 @@ class FrigoMalinPanel extends HTMLElement {
                 ${this._tplKeepSelect(ing, i)}
                 <button class="icon-btn" data-action="ing-remove" data-i="${i}" aria-label="Retirer">${icon("close")}</button>
               </div>`
-                : `<div class="ing-row">
+            : `<div class="ing-row">
                 <span class="ing-emoji">${ingEmoji(ing.name)}</span>
                 <input value="${esc(ing.name)}" data-model="fridge.ingredients.${i}.name" aria-label="Ingrédient">
                 ${ing.amount ? `<input class="amount" value="${esc(ing.amount)}" data-model="fridge.ingredients.${i}.amount" aria-label="Quantité">` : ""}
                 <button class="icon-btn" data-action="ing-remove" data-i="${i}" aria-label="Retirer">${icon("close")}</button>
-              </div>`
-            )
-            .join("")}
-        </div>
+              </div>`;
+          // Rangés comme dans le frigo : étagères du haut vers le bas, bac, porte, puis congélateur et placard.
+          const { body, door, extra } = fridgeSections(f.ingredients.map((x, i) => ({ ...x, _i: i })));
+          const groups = [
+            ...body.map((g) => ({ ...g, label: g.key.startsWith("shelf") ? `🧊 ${g.label}` : g.label })),
+            ...(door.length ? [{ key: "porte", label: "🚪 Porte", items: door }] : []),
+            ...extra,
+          ];
+          return groups
+            .map((g) => `<div class="ing-group"><div class="ing-group-head">${esc(g.label)} <span>${g.items.length}</span></div>${g.items.map((x) => row(x, x._i)).join("")}</div>`)
+            .join("");
+        })()}
         <div class="row" style="margin-top:10px">
           <input class="input grow" id="new-ing" placeholder="Ajouter (ex. : œufs, crème)" value="${esc(f.newIng)}" data-model="fridge.newIng" data-enter="ing-add" enterkeyhint="done">
           <button class="btn tonal" data-action="ing-add" aria-label="Ajouter">${icon("plus")}</button>

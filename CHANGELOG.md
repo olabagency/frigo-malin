@@ -7,6 +7,14 @@ Toutes les évolutions notables sont listées ici. Les numéros de version suive
 - **mineure** (1.**1**.0) : nouvelles fonctions, vos recettes et réglages sont conservés ;
 - **majeure** (**2**.0.0) : changement important, lisez les notes avant de mettre à jour.
 
+## [1.20.1] – 2026-11-12
+
+### Modifié
+
+- 🧊 **Liste des ingrédients du frigo rangée par étage** : étagère du haut,
+  étagères suivantes, bac à légumes, porte, puis congélateur et placard,
+  comme dans le vrai frigo.
+
 ## [1.20.0] – 2026-11-11
 
 ### Ajouté
